@@ -25,7 +25,9 @@ from PIL import Image, ExifTags
 import media as M
 import xmp_rating as X
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+# Bundled files (photocull.html) live in PyInstaller's unpack folder when
+# running as PhotoCull.exe, and next to this script otherwise.
+HERE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
 STATE_FILE = ".photocull.json"
 NIKON_RAW = {".nef", ".nrw"}
 NIKON_NAME = re.compile(r"^(DSC_|_DSC|DSCN)\d", re.I)

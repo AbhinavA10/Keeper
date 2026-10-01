@@ -1,0 +1,14 @@
+# Conda environment for running PhotoCull from source and building PhotoCull.exe.
+#   conda env create -f environment.yml
+#   conda env update -f environment.yml --prune   (after this file changes)
+name: photocull
+channels:
+  - conda-forge
+  - nodefaults   # Anaconda's "defaults" channel needs registration on some networks
+dependencies:
+  - python=3.10
+  - pillow>=10
+  - pip
+  - pyinstaller>=6   # only needed to build PhotoCull.exe
+  - pip:
+      - pillow-heif  # HEIC/HEIF previews (iPhone photos)

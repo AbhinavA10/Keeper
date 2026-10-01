@@ -146,7 +146,8 @@ def embedded_jpeg(path):
         orientation = 1
     if orientation in (3, 6, 8):
         with Image.open(io.BytesIO(jpeg)) as im:
-            im = im.transpose({3: Image.ROTATE_180, 6: Image.ROTATE_270, 8: Image.ROTATE_90}[orientation])
+            T = Image.Transpose
+            im = im.transpose({3: T.ROTATE_180, 6: T.ROTATE_270, 8: T.ROTATE_90}[orientation])
             jpeg = _to_jpeg(im, 90)
     return jpeg
 
