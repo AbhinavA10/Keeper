@@ -122,7 +122,9 @@ class Catalogue:
             raise ValueError("unknown label")
         with self.lock:
             if item["nikon"]:
-                X.write_pair(self.folder, item["images"], **changes)
+                state = {"rating": item["rating"], "label": item["label"], **changes}
+                X.write_pair(self.folder, item["images"], state["rating"], state["label"],
+                             gps=self._gps_version(item))
             else:
                 for field, store in (("rating", "ratings"), ("label", "labels")):
                     if field in changes:
@@ -132,6 +134,18 @@ class Catalogue:
                             self.state[store].pop(key, None)
                 self._save_state()
             item.update(changes)
+
+    def _gps_version(self, item):
+        """EXIF GPSVersionID, which NX Studio copies into its sidecars."""
+        for n in item["images"]:
+            if M.ext(n) in M.NATIVE:
+                try:
+                    with Image.open(os.path.join(self.folder, n)) as im:
+                        v = im.getexif().get_ifd(0x8825).get(0)
+                    return bytes(v) if v else None
+                except Exception:
+                    return None
+        return None
 
     def set_reject(self, key, reject):
         if key not in self.items:

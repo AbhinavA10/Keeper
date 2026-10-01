@@ -11,11 +11,11 @@ It opens in your browser; close the console window to quit.
 | ← → / Space | Previous / next |
 | X | Toggle reject |
 | 1–5, 0 | Set / clear stars |
-| R | Toggle red label |
+| S (or R) | Toggle social media — shareable, no people (stored as the Red label in NX Studio) |
 | Z or click | Zoom 100% |
 | P | Play / pause video |
 | Ctrl+Z | Undo |
-| F | Cycle filter (unrated, rejected, red, 3★+, photos, videos …) |
+| F | Cycle filter (unrated, rejected, social media, 3★+, photos, videos …) |
 | A | Toggle auto-advance |
 | Del | Review & move rejected items to the Recycle Bin |
 
@@ -36,10 +36,13 @@ HEIC needs one extra package:
 ## Where ratings, labels and rejects are stored
 
 * **Nikon items** (NEF/NRW, anything with an NX Studio sidecar, out-of-camera
-  Nikon JPEGs): ratings and labels are written where NX Studio reads them, per file —
-  the XMP packet in its `NKSC_PARAM\*.nksc` sidecar if it has one, otherwise the
-  camera's XMP inside the file (edited in place; the file size never changes).
-  Label = `photoshop:Urgency` + `xmp:Label`, exactly as NX Studio writes it.
+  Nikon JPEGs): ratings and labels go into NX Studio sidecars in `NKSC_PARAM\`
+  next to the photos — one per file (`DSC_1234.NEF.nksc`, `DSC_1234.JPG.nksc`).
+  Existing sidecars are updated; missing ones (and the folder) are created in
+  NX Studio's own format. Label = `photoshop:Urgency` + `xmp:Label`, exactly as
+  NX Studio writes it.
+* **Original photo and video files are never modified** — only read. Deleting
+  rejects (to the Recycle Bin) is the only thing PhotoCull ever does to them.
 * **Everything else** (phone photos, videos): ratings and labels are kept in
   `.photocull.json` in the folder — the files themselves are never modified.
 * **Rejects** are always kept in `.photocull.json`.

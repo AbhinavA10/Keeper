@@ -65,8 +65,14 @@
   .th.cur { border-color: var(--sel); }
   .th.rej img { opacity: .3; filter: grayscale(1); }
   .th.rej::after { content: "✕"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--reject); font-size: 34px; font-weight: 700; }
-  .th .r { position: absolute; left: 4px; bottom: 3px; font-size: 11px; color: var(--accent); text-shadow: 0 1px 2px #000; letter-spacing: 1px; }
-  .th .lbl { position: absolute; right: 5px; top: 5px; width: 11px; height: 11px; border-radius: 50%; box-shadow: 0 0 0 2px rgba(0,0,0,.5); display: none; }
+  /* Overlays sit on solid/dark backing so they read on any photo. */
+  .th .r { position: absolute; left: 4px; bottom: 7px; font-size: 12px; line-height: 1; color: var(--accent); letter-spacing: 1px;
+    background: rgba(0,0,0,.78); border-radius: 4px; padding: 3px 4px 3px 5px; display: none; }
+  .th .r.on { display: block; }
+  .th .lbl { position: absolute; right: 4px; top: 4px; font-size: 9px; font-weight: 800; letter-spacing: .6px; line-height: 1; color: white;
+    background: var(--lc); border-radius: 4px; padding: 3px 5px; box-shadow: 0 1px 3px rgba(0,0,0,.6); display: none; }
+  .th .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: var(--lc); display: none; }
+  .th.haslabel .lbl, .th.haslabel .bar { display: block; }
   .th .vid { position: absolute; left: 5px; top: 4px; font-size: 10px; font-weight: 700; color: white; background: rgba(0,0,0,.6); border-radius: 4px; padding: 0 5px; display: none; }
   .th.isvideo .vid { display: block; }
 
@@ -95,14 +101,14 @@
     <span class="stat saving" id="saving">Saved</span>
     <span class="stat"><b id="sTotal">0</b> items</span>
     <span class="stat"><b id="sUnrated">0</b> unrated</span>
-    <span class="stat"><b id="sRed" style="color:var(--red)">0</b> red</span>
+    <span class="stat"><b id="sRed" style="color:var(--red)">0</b> social media</span>
     <span class="stat"><b id="sRej" style="color:var(--reject)">0</b> rejected</span>
     <select id="filter" title="Filter (F)">
       <option value="all">All items</option>
       <option value="unrated">Unrated</option>
       <option value="keep">Not rejected</option>
       <option value="rejected">Rejected</option>
-      <option value="red">Red label</option>
+      <option value="red">Social media</option>
       <option value="r1">★ 1+</option>
       <option value="r2">★ 2+</option>
       <option value="r3">★ 3+</option>
@@ -137,7 +143,7 @@
       <kbd>X</kbd><span>Toggle reject</span>
       <kbd>1 – 5</kbd><span>Set star rating</span>
       <kbd>0</kbd><span>Clear rating</span>
-      <kbd>R</kbd><span>Toggle red label</span>
+      <kbd>S</kbd><span>Toggle social media — shareable, no people (red label in NX Studio; <kbd>R</kbd> also works)</span>
       <kbd>Z</kbd><span>Zoom to 100% (or click the photo)</span>
       <kbd>P</kbd><span>Play / pause video</span>
       <kbd>Ctrl Z</kbd><span>Undo last change</span>
@@ -157,6 +163,11 @@ const stage = $('#stage'), strip = $('#strip');
 let items = [], view = [], cur = 0, autoAdvance = true, zoomed = false, MEDIA = '', pending = 0, HEIF = false;
 const undo = [];
 const pre = new Map();  // key -> Image, small LRU of decoded photos
+// What each NX Studio label means to you. The stored label stays "Red" so
+// NX Studio keeps showing it; only the name shown here changes.
+const LABEL_NAMES = { Red: 'Social media' };
+const LABEL_SHORT = { Red: 'Social' };  // fits on a thumbnail
+const labelName = l => LABEL_NAMES[l] || l;
 const LABELS = { Red: '#ef4444', Orange: '#f97316', Yellow: '#eab308', Green: '#22c55e', Blue: '#3b82f6',
                  Purple: '#a855f7', Pink: '#ec4899', Brown: '#a16207', Gray: '#9ca3af' };
 
@@ -212,7 +223,7 @@ function rebuild(keepKey) {
     d.className = 'th' + (isVideo(it) ? ' isvideo' : '');
     d.dataset.i = i;
     d.innerHTML = `<img loading="lazy" decoding="async" src="${MEDIA}/thumb/${enc(it.key)}"><span class="ph">${esc(it.display)}</span>` +
-                  `<span class="vid">▶ VIDEO</span><span class="lbl"></span><span class="r"></span>`;
+                  `<span class="vid">▶ VIDEO</span><span class="bar"></span><span class="lbl"></span><span class="r"></span>`;
     d.querySelector('img').onerror = () => d.classList.add('noimg');
     frag.appendChild(d);
   });
@@ -227,10 +238,14 @@ function paintThumb(i) {
   if (!d) return;
   d.classList.toggle('rej', it.reject);
   d.classList.toggle('cur', i === cur);
-  d.querySelector('.r').textContent = it.rating ? '★'.repeat(it.rating) : '';
-  const l = d.querySelector('.lbl');
-  l.style.display = it.label ? 'block' : 'none';
-  l.style.background = LABELS[it.label] || '#888';
+  const r = d.querySelector('.r');
+  r.textContent = it.rating ? '★'.repeat(it.rating) : '';
+  r.classList.toggle('on', !!it.rating);
+  d.classList.toggle('haslabel', !!it.label);
+  if (it.label) {
+    d.style.setProperty('--lc', LABELS[it.label] || '#888');
+    d.querySelector('.lbl').textContent = (LABEL_SHORT[it.label] || it.label).toUpperCase();
+  }
 }
 
 function stats() {
@@ -317,7 +332,7 @@ async function show() {
   }
   stage.classList.toggle('rejected', it.reject);
   stage.classList.toggle('isvideo', isVideo(it));
-  const label = it.label ? `<span class="badge label" style="background:${LABELS[it.label] || '#666'}">${esc(it.label.toUpperCase())}</span>` : '';
+  const label = it.label ? `<span class="badge label" style="background:${LABELS[it.label] || '#666'}">${esc(labelName(it.label).toUpperCase())}</span>` : '';
   const info = infoCache.get(it.key);
   const exif = info ? [info.shutter, info.aperture, info.iso, info.focal].filter(Boolean).join(' · ') : '';
   const types = [...new Set(it.files.map(f => f.split('.').pop().toUpperCase()))].join('+');
@@ -466,7 +481,7 @@ document.addEventListener('keydown', e => {
   else if (k === 'End') { cur = view.length - 1; show(); }
   else if (/^[0-5]$/.test(k)) rate(+k);
   else if (k === 'x') toggleReject();
-  else if (k === 'r') toggleRed();
+  else if (k === 's' || k === 'r') toggleRed();
   else if (k === 'z') toggleZoom();
   else if (k === 'p') { const v = stage.querySelector('#vid'); if (v && !v.hidden) v.paused ? v.play() : v.pause(); }
   else if (k === 'a') setAuto(!autoAdvance);

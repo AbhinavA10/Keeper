@@ -10,8 +10,8 @@ to when there is no sidecar.
 A label is written as <photoshop:Urgency>N</photoshop:Urgency> plus
 <xmp:Label>Name</xmp:Label>; removing it deletes both.
 
-All edits keep packets the same length where possible by consuming or adding
-XMP padding whitespace, so in-file edits never shift any other bytes.
+Original photo files are only ever READ (for in-camera ratings). Everything
+PhotoCull stores goes into sidecars, which are created when missing.
 """
 import base64
 import os
@@ -88,10 +88,20 @@ def _ensure_ns(body, decl):
 
 
 def _insert(body, element):
-    close = body.find(b"</rdf:Description>")
-    if close < 0:
+    """Add element(s) as the last properties, matching the packet's layout."""
+    close = re.search(rb"(\r?\n[ \t]*)?</rdf:Description>", body)
+    if not close:
         raise XmpError("no rdf:Description")
-    return body[:close] + element + body[close:]
+    indent = re.search(rb"(\r?\n[ \t]+)<\w+:\w+>", body)
+    if close.group(1) and indent:  # pretty-printed (NX Studio style)
+        sep = indent.group(1)
+        element = b"".join(sep + e for e in re.findall(rb"<\w+:\w+>[^<]*</\w+:\w+>", element))
+    return body[:close.start()] + element + body[close.start():]
+
+
+def _remove(regex_body, body):
+    """Remove a property element together with its line break and indent."""
+    return re.sub(rb"(\r?\n[ \t]*)?" + regex_body, b"", body)
 
 
 def _edit_body(body, rating=UNSET, label=UNSET):
@@ -105,8 +115,8 @@ def _edit_body(body, rating=UNSET, label=UNSET):
             body = _MS_RE.sub(b"<MicrosoftPhoto:Rating>%d</MicrosoftPhoto:Rating>"
                               % MS_RATING[rating], body, count=1)
     if label is not UNSET:
-        body = _URGENCY_RE.sub(b"", body)
-        body = _LABEL_RE.sub(b"", body)
+        body = _remove(_URGENCY_RE.pattern, body)
+        body = _remove(_LABEL_RE.pattern, body)
         if label:
             body = _insert(body, b"<photoshop:Urgency>%d</photoshop:Urgency>"
                            b"<xmp:Label>%s</xmp:Label>" % (LABELS[label], label.encode()))
@@ -212,45 +222,110 @@ _HEAD = 512 * 1024  # camera XMP sits well within the first 512 KB
 
 
 def read_file(path):
+    """Rating/label the camera stored in the image's own XMP (read-only)."""
     with open(path, "rb") as f:
         return read_packet(f.read(_HEAD))
 
 
-def write_file_inplace(path, **changes):
-    """Change the image's own XMP packet without moving any other bytes.
+# ---------------------------------------------------------------- new sidecars
+# Layout copied from sidecars NX Studio 1.9 wrote for this user's D7500 and
+# Z50 II. NX Studio's edit settings (nine:NineEdits) are deliberately left out:
+# with none recorded, NX Studio uses the camera's as-shot settings.
 
-    Only the packet region is rewritten; returns False if nothing changed,
-    raises XmpError if it can't be done at the same length.
-    """
-    name = os.path.basename(path)
-    with open(path, "r+b") as f:
-        head = f.read(_HEAD)
-        b = _packet_bounds(head)
-        if not b or b[2] >= len(head):
-            raise XmpError(f"no XMP packet in {name}")
-        start, _, end = b
-        region = head[start:end]
-        try:
-            new_region = edit_packet(region, keep_length=True, **changes)
-        except XmpError as e:
-            raise XmpError(f"{e} in {name}")
-        if new_region == region:
-            return False
-        f.seek(start)
-        f.write(new_region)
-        f.flush()
-        f.seek(start)
-        if f.read(len(new_region)) != new_region:
-            raise XmpError(f"verification failed for {name}")
-    _check(read_file(path), changes, name)
-    return True
+_SIDECAR_HEAD = "\r\n".join([
+    '<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>',
+    '<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="XMP Core 5.5.0">',
+    '   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">',
+    '      <rdf:Description rdf:about="core-sidear-tags/1.0"',
+    '            xmlns:sdc="http://ns.nikon.com/sdc/1.0/"',
+    '            xmlns:ast="http://ns.nikon.com/asteroid/1.0/"',
+    '            xmlns:astype="http://ns.nikon.com/asteroid/Types/1.0/"',
+    '            xmlns:nine="http://ns.nikon.com/nine/1.0/">',
+    '         <sdc:about>nikon sidecar/1.0</sdc:about>',
+    '         <sdc:version>1.1.0</sdc:version>',
+    '         <sdc:appversion>1.9 W</sdc:appversion>',
+    '         <sdc:appname>NX Studio</sdc:appname>',
+    '         <ast:about>core-asteroid-tags</ast:about>',
+    '         <ast:version>11.0.0.3000</ast:version>',
+    '         <ast:XMLPackets rdf:parseType="Resource">',
+    '            <rdf:value>{packet}</rdf:value>',
+    '            <astype:Type>Binary</astype:Type>',
+    '         </ast:XMLPackets>',
+    ''])
+_SIDECAR_GPS = "\r\n".join([
+    '         <ast:GPSVersionID rdf:parseType="Resource">',
+    '            <rdf:value>{gps}</rdf:value>',
+    '            <astype:Type>Binary</astype:Type>',
+    '         </ast:GPSVersionID>',
+    ''])
+_SIDECAR_TAIL = "\r\n".join([
+    '         <nine:about>nine-tags</nine:about>',
+    '         <nine:version>2.0.0</nine:version>',
+    '         <nine:Label>0</nine:Label>',
+    '         <nine:Rating>0</nine:Rating>',
+    '         <nine:Trim>/////////////////////w==</nine:Trim>',
+    '      </rdf:Description>',
+    '   </rdf:RDF>',
+    '</x:xmpmeta>',
+    '',
+    '<?xpacket end="w"?>'])
+
+
+def _nx_packet(rating, label):
+    """The XMP packet NX Studio stores inside a sidecar after rating/labelling."""
+    props = []
+    if label:
+        props += [f"<photoshop:Urgency>{LABELS[label]}</photoshop:Urgency>",
+                  f"<xmp:Label>{label}</xmp:Label>"]
+    if rating:
+        props.append(f"<xmp:Rating>{rating}</xmp:Rating>")
+    props.append(f"<MicrosoftPhoto:Rating>{MS_RATING[rating]}</MicrosoftPhoto:Rating>")
+    lines = [
+        '<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>',
+        '<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="XMP Core 5.5.0">',
+        '   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">',
+        '      <rdf:Description rdf:about=""',
+        '            xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/"',
+        '            xmlns:xmp="http://ns.adobe.com/xap/1.0/"',
+        '            xmlns:MicrosoftPhoto="http://ns.microsoft.com/photo/1.0/">',
+        *(f"         {p}" for p in props),
+        '      </rdf:Description>',
+        '   </rdf:RDF>',
+        '</x:xmpmeta>',
+        *([" " * 100] * 20),  # standard XMP padding, as NX Studio writes it
+        '<?xpacket end="w"?>']
+    return "\n".join(lines).encode("utf-8")
+
+
+def create_sidecar(path, rating, label, gps=None):
+    """Write a new NX Studio sidecar at path (which must not exist yet)."""
+    if os.path.exists(path):
+        raise XmpError(f"{os.path.basename(path)} already exists")
+    # NX Studio wraps base64 at 76 characters with &#xA; separators.
+    text = _SIDECAR_HEAD.format(packet=_encode_value(_nx_packet(rating, label), "x" * 76 + "&#xA;y"))
+    if gps:
+        text += _SIDECAR_GPS.format(gps=base64.b64encode(gps).decode("ascii"))
+    text += _SIDECAR_TAIL
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
+    try:
+        _check(read_sidecar(tmp), {"rating": rating, "label": label}, os.path.basename(path))
+    except XmpError:
+        os.remove(tmp)
+        raise
+    os.replace(tmp, path)
 
 
 # ---------------------------------------------------------------- pairs
 
+def sidecar_path(folder, name):
+    return os.path.join(folder, SIDECAR_DIR, name + ".nksc")
+
+
 def sidecars_for(folder, names):
-    d = os.path.join(folder, SIDECAR_DIR)
-    return [p for p in (os.path.join(d, n + ".nksc") for n in names) if os.path.exists(p)]
+    return [p for p in (sidecar_path(folder, n) for n in names) if os.path.exists(p)]
 
 
 def read_pair(folder, names):
@@ -265,26 +340,19 @@ def read_pair(folder, names):
     return 0, None
 
 
-def write_pair(folder, names, **changes):
-    """Set rating= and/or label= everywhere NX Studio will look for this pair.
+def write_pair(folder, names, rating, label, gps=None):
+    """Store rating and label for a pair in NX Studio sidecars, one per file.
 
-    Each file gets it where NX Studio reads it for that file: its sidecar if it
-    has one, otherwise the camera's XMP packet in the file.
+    Existing sidecars are updated; missing ones are created. The image files
+    themselves are never opened for writing.
     """
-    if "rating" in changes and not 0 <= changes["rating"] <= 5:
+    if not 0 <= rating <= 5:
         raise ValueError("rating must be 0-5")
-    if changes.get("label") not in (None, *LABELS):
+    if label not in (None, *LABELS):
         raise ValueError("unknown label")
-    written, errors = 0, []
     for n in names:
-        sc = sidecars_for(folder, [n])
-        try:
-            if sc:
-                write_sidecar(sc[0], **changes)
-            else:
-                write_file_inplace(os.path.join(folder, n), **changes)
-            written += 1
-        except XmpError as e:
-            errors.append(str(e))
-    if errors and not written:
-        raise XmpError("; ".join(errors))
+        sc = sidecar_path(folder, n)
+        if os.path.exists(sc):
+            write_sidecar(sc, rating=rating, label=label)
+        elif rating or label:
+            create_sidecar(sc, rating, label, gps)
