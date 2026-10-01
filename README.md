@@ -91,8 +91,9 @@ conda run -n photocull python photocull.py "M:\all\Pics-2sort-AB\101D7500"
 
 ## Using it
 
-There are two views. **Single view** shows one large photo with a filmstrip
-underneath; the current photo is lifted and outlined in blue. **Grid view**
+There are two views. **Single view** shows one large photo; press **T** or the
+*Filmstrip* button to show a strip of thumbnails underneath, where the current
+photo is lifted and outlined in blue. **Grid view**
 (press **G** or the *Grid* button) fills the window with thumbnails; drag the
 slider in the header to resize them, and click a photo to open it. Rating,
 labelling and rejecting work in both views.
@@ -106,6 +107,7 @@ view afterwards). Otherwise NX Studio can overwrite the new ratings from its cac
 | G | Switch between grid and single-photo view |
 | Enter / click | Grid: open the selected photo in single view |
 | Esc | Single view: back to the grid |
+| T | Single view: show / hide the filmstrip |
 | ← → / Space / Backspace | Previous / next (↑ ↓ move by rows in the grid) |
 | X | Toggle reject |
 | 1–5, 0 | Set / clear stars |
@@ -154,6 +156,7 @@ HEVC in Chrome) can't play there, but they can still be culled.
 | Windows or antivirus blocks `PhotoCull.exe` | Unsigned PyInstaller exes are sometimes flagged. Allow it, or run from source with `PhotoCull.bat`. |
 | HEIC photos show "No preview" | Running from an old environment: `conda env update -f environment.yml --prune`. |
 | Video thumbnails are blank | Install ffmpeg and make sure `ffmpeg` runs from a new terminal. |
+| Pages sometimes take a few seconds to load, or show "Failed to fetch" | Antivirus web protection (e.g. AVG/Avast Web Shield) can scan PhotoCull's local traffic and stall or reset it. PhotoCull retries automatically; if it keeps happening, add an exception for `127.0.0.1` in the antivirus settings. |
 | A rejected item fails to delete | The file is open in another program (e.g. NX Studio). Close it and press **Del** again. |
 | Ratings don't show in NX Studio | Refresh the folder in NX Studio, or close and reopen it. |
 

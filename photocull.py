@@ -366,6 +366,9 @@ def main():
     Handler.cat = Catalogue(folder)
     port = next((int(a.split("=", 1)[1]) for a in sys.argv if a.startswith("--port=")), 0)
     ThreadingHTTPServer.daemon_threads = True
+    # The grid requests dozens of thumbnails at once; the default backlog of 5
+    # makes Windows reset the overflow connections.
+    ThreadingHTTPServer.request_queue_size = 128
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     # Photos are served from a second port: browsers allow only ~6 connections
     # per host, and big image downloads must never queue up rating saves.

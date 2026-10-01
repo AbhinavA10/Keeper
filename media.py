@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 
 from PIL import Image, ImageOps
 
@@ -182,8 +183,17 @@ def _video_frame(path):
     raise ValueError(f"no frame from {os.path.basename(path)}")
 
 
+# Decoding many full-size photos at once (grid scrolling) thrashes the disk and
+# CPU; a few at a time finishes the visible thumbnails sooner.
+_THUMB_SLOTS = threading.Semaphore(max(2, min(6, (os.cpu_count() or 4) // 2)))
+
+
 def thumbnail(path, render):
     def build():
+        with _THUMB_SLOTS:
+            return _build_thumb()
+
+    def _build_thumb():
         if render == "video":
             src = io.BytesIO(_video_frame(path))
         elif render == "raw":
