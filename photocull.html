@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PhotoCull</title>
+<style>
+  :root {
+    --bg: #0e0f11; --panel: #17191c; --panel2: #1f2226; --line: #2a2e33;
+    --text: #e8e9eb; --dim: #8b9097; --accent: #f5b301; --reject: #ef4444;
+    --ok: #22c55e; --sel: #3b82f6; --red: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.4 "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; overflow: hidden; user-select: none; }
+  #app { display: grid; grid-template-rows: 44px 1fr 112px; height: 100vh; }
+
+  header { display: flex; align-items: center; gap: 14px; padding: 0 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header .title { font-weight: 600; letter-spacing: .2px; }
+  header .folder { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 30vw; }
+  header .spacer { flex: 1; }
+  .stat { color: var(--dim); white-space: nowrap; }
+  .stat b { color: var(--text); font-weight: 600; }
+  .saving { color: var(--ok); min-width: 56px; }
+  .saving.busy { color: var(--accent); }
+  select, button { font: inherit; color: var(--text); background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  button:hover, select:hover { border-color: #3d434a; }
+  button.danger { background: #3a1416; border-color: #5c1d21; color: #fecaca; }
+  button.danger:hover { background: #4a171b; }
+  button.danger:disabled { opacity: .4; cursor: default; }
+  .toggle.on { border-color: var(--sel); color: #bfdbfe; }
+
+  #stage { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  #stage #main, #stage #vid { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+  #stage #main { cursor: zoom-in; }
+  #stage.zoom { overflow: auto; display: block; }
+  #stage.zoom #main { max-width: none; max-height: none; cursor: zoom-out; }
+  #stage.rejected #main, #stage.rejected #vid { opacity: .35; filter: grayscale(.7); }
+  #stage .note { color: var(--dim); font-size: 15px; text-align: center; max-width: 520px; line-height: 1.6; }
+  #stage .note b { color: var(--text); display: block; font-size: 18px; margin-bottom: 4px; }
+  [hidden] { display: none !important; }
+
+  .hud { position: absolute; left: 14px; bottom: 12px; display: flex; gap: 10px; align-items: center;
+    background: rgba(14,15,17,.72); backdrop-filter: blur(8px); padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line); pointer-events: none; }
+  #stage.isvideo .hud { bottom: auto; top: 12px; }
+  .hud .name { font-weight: 600; }
+  .hud .types { color: var(--dim); font-size: 11px; letter-spacing: .4px; }
+  .hud .exif { color: var(--dim); }
+  .stars { color: #4a4f56; letter-spacing: 2px; font-size: 16px; }
+  .stars .on { color: var(--accent); }
+  .badge { padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 700; letter-spacing: .5px; }
+  .badge.reject { background: var(--reject); color: white; }
+  .badge.label { color: white; }
+  .pos { position: absolute; right: 14px; bottom: 12px; color: var(--dim); background: rgba(14,15,17,.72); padding: 5px 10px; border-radius: 8px; pointer-events: none; }
+  #stage.isvideo .pos { bottom: auto; top: 12px; }
+  .empty { color: var(--dim); font-size: 15px; }
+
+  #strip { background: var(--panel); border-top: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; white-space: nowrap; padding: 8px 8px 6px; scrollbar-width: thin; scrollbar-color: #3a3f45 transparent; }
+  .th { display: inline-block; position: relative; width: 132px; height: 92px; margin-right: 6px; border-radius: 6px; overflow: hidden;
+    background: var(--panel2); border: 2px solid transparent; cursor: pointer; vertical-align: top; }
+  .th img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .th.noimg img { display: none; }
+  .th .ph { display: none; position: absolute; inset: 0; place-items: center; color: var(--dim); font-size: 11px; padding: 6px; text-align: center; white-space: normal; word-break: break-all; }
+  .th.noimg .ph { display: grid; }
+  .th.cur { border-color: var(--sel); }
+  .th.rej img { opacity: .3; filter: grayscale(1); }
+  .th.rej::after { content: "✕"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--reject); font-size: 34px; font-weight: 700; }
+  .th .r { position: absolute; left: 4px; bottom: 3px; font-size: 11px; color: var(--accent); text-shadow: 0 1px 2px #000; letter-spacing: 1px; }
+  .th .lbl { position: absolute; right: 5px; top: 5px; width: 11px; height: 11px; border-radius: 50%; box-shadow: 0 0 0 2px rgba(0,0,0,.5); display: none; }
+  .th .vid { position: absolute; left: 5px; top: 4px; font-size: 10px; font-weight: 700; color: white; background: rgba(0,0,0,.6); border-radius: 4px; padding: 0 5px; display: none; }
+  .th.isvideo .vid { display: block; }
+
+  #toast { position: fixed; top: 56px; left: 50%; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--line);
+    padding: 8px 14px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 9; }
+  #toast.show { opacity: 1; }
+  #toast.err { border-color: var(--reject); color: #fecaca; }
+
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 10; }
+  .modal.show { display: flex; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; width: min(560px, 92vw); max-height: 80vh; display: flex; flex-direction: column; gap: 12px; }
+  .card h2 { margin: 0; font-size: 17px; }
+  .card .list { overflow: auto; color: var(--dim); font-family: Consolas, monospace; font-size: 12px; background: var(--bg); border-radius: 6px; padding: 8px 10px; max-height: 40vh; }
+  .card .row { display: flex; gap: 8px; justify-content: flex-end; }
+  kbd { background: var(--panel2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 6px; font: 12px Consolas, monospace; }
+  .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; }
+  .small { color: var(--dim); font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <span class="title">PhotoCull</span>
+    <span class="folder" id="folder"></span>
+    <span class="spacer"></span>
+    <span class="stat saving" id="saving">Saved</span>
+    <span class="stat"><b id="sTotal">0</b> items</span>
+    <span class="stat"><b id="sUnrated">0</b> unrated</span>
+    <span class="stat"><b id="sRed" style="color:var(--red)">0</b> red</span>
+    <span class="stat"><b id="sRej" style="color:var(--reject)">0</b> rejected</span>
+    <select id="filter" title="Filter (F)">
+      <option value="all">All items</option>
+      <option value="unrated">Unrated</option>
+      <option value="keep">Not rejected</option>
+      <option value="rejected">Rejected</option>
+      <option value="red">Red label</option>
+      <option value="r1">★ 1+</option>
+      <option value="r2">★ 2+</option>
+      <option value="r3">★ 3+</option>
+      <option value="r4">★ 4+</option>
+      <option value="r5">★ 5</option>
+      <option value="photos">Photos only</option>
+      <option value="videos">Videos only</option>
+    </select>
+    <button id="auto" class="toggle on" title="Advance to next item after rating/rejecting (A)">Auto-advance</button>
+    <button id="help" title="Keyboard shortcuts (?)">?</button>
+    <button id="del" class="danger" disabled>Delete rejected…</button>
+  </header>
+  <div id="stage"><div class="empty">Loading…</div></div>
+  <div id="strip"></div>
+</div>
+<div id="toast"></div>
+
+<div class="modal" id="delModal">
+  <div class="card">
+    <h2 id="delTitle"></h2>
+    <div>Every file in each group (e.g. NEF + JPG, HEIC + Live Photo MOV) and any NX Studio sidecars will be moved to the <b>Recycle Bin</b>.</div>
+    <div class="list" id="delList"></div>
+    <div class="row"><button id="delCancel">Cancel</button><button class="danger" id="delGo">Move to Recycle Bin</button></div>
+  </div>
+</div>
+
+<div class="modal" id="helpModal">
+  <div class="card">
+    <h2>Keyboard shortcuts</h2>
+    <div class="keys">
+      <kbd>← →</kbd><span>Previous / next (also <kbd>Space</kbd>, <kbd>Backspace</kbd>)</span>
+      <kbd>X</kbd><span>Toggle reject</span>
+      <kbd>1 – 5</kbd><span>Set star rating</span>
+      <kbd>0</kbd><span>Clear rating</span>
+      <kbd>R</kbd><span>Toggle red label</span>
+      <kbd>Z</kbd><span>Zoom to 100% (or click the photo)</span>
+      <kbd>P</kbd><span>Play / pause video</span>
+      <kbd>Ctrl Z</kbd><span>Undo last change</span>
+      <kbd>F</kbd><span>Cycle filter</span>
+      <kbd>A</kbd><span>Toggle auto-advance</span>
+      <kbd>Home End</kbd><span>First / last</span>
+      <kbd>Del</kbd><span>Review and delete rejected items</span>
+    </div>
+    <div class="small">Nikon photos keep ratings and labels in NX Studio's own files. Other photos and videos keep them in <code>.photocull.json</code> in the folder.</div>
+    <div class="row"><button id="helpClose">Close</button></div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const stage = $('#stage'), strip = $('#strip');
+let items = [], view = [], cur = 0, autoAdvance = true, zoomed = false, MEDIA = '', pending = 0, HEIF = false;
+const undo = [];
+const pre = new Map();  // key -> Image, small LRU of decoded photos
+const LABELS = { Red: '#ef4444', Orange: '#f97316', Yellow: '#eab308', Green: '#22c55e', Blue: '#3b82f6',
+                 Purple: '#a855f7', Pink: '#ec4899', Brown: '#a16207', Gray: '#9ca3af' };
+
+try { autoAdvance = localStorage.getItem('pc.auto') !== '0'; } catch {}
+const enc = k => encodeURIComponent(k);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const isVideo = it => it.render === 'video';
+
+async function api(path, body) {
+  if (body) setPending(+1);
+  try {
+    const r = await fetch(path, body ? { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) } : {});
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    return j;
+  } finally { if (body) setPending(-1); }
+}
+
+function setPending(d) {
+  pending += d;
+  const s = $('#saving');
+  s.textContent = pending ? 'Saving…' : 'Saved';
+  s.classList.toggle('busy', pending > 0);
+}
+window.addEventListener('beforeunload', e => { if (pending) { e.preventDefault(); e.returnValue = ''; } });
+
+function toast(msg, err) {
+  const t = $('#toast'); t.textContent = msg; t.className = 'show' + (err ? ' err' : '');
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.className = '', err ? 4000 : 1400);
+}
+
+function matches(it, f) {
+  switch (f) {
+    case 'unrated': return !it.reject && !it.rating;
+    case 'keep': return !it.reject;
+    case 'rejected': return it.reject;
+    case 'red': return it.label === 'Red';
+    case 'photos': return !isVideo(it);
+    case 'videos': return isVideo(it);
+    case 'all': return true;
+    default: return !it.reject && it.rating >= +f.slice(1);
+  }
+}
+
+function rebuild(keepKey) {
+  const f = $('#filter').value;
+  view = items.filter(it => matches(it, f) || it.key === keepKey);
+  cur = Math.max(0, keepKey ? view.findIndex(it => it.key === keepKey) : 0);
+  strip.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  view.forEach((it, i) => {
+    const d = document.createElement('div');
+    d.className = 'th' + (isVideo(it) ? ' isvideo' : '');
+    d.dataset.i = i;
+    d.innerHTML = `<img loading="lazy" decoding="async" src="${MEDIA}/thumb/${enc(it.key)}"><span class="ph">${esc(it.display)}</span>` +
+                  `<span class="vid">▶ VIDEO</span><span class="lbl"></span><span class="r"></span>`;
+    d.querySelector('img').onerror = () => d.classList.add('noimg');
+    frag.appendChild(d);
+  });
+  strip.appendChild(frag);
+  view.forEach((_, i) => paintThumb(i));
+  stats();
+  show();
+}
+
+function paintThumb(i) {
+  const d = strip.children[i], it = view[i];
+  if (!d) return;
+  d.classList.toggle('rej', it.reject);
+  d.classList.toggle('cur', i === cur);
+  d.querySelector('.r').textContent = it.rating ? '★'.repeat(it.rating) : '';
+  const l = d.querySelector('.lbl');
+  l.style.display = it.label ? 'block' : 'none';
+  l.style.background = LABELS[it.label] || '#888';
+}
+
+function stats() {
+  $('#sTotal').textContent = items.length;
+  $('#sUnrated').textContent = items.filter(it => !it.rating && !it.reject).length;
+  $('#sRed').textContent = items.filter(it => it.label === 'Red').length;
+  const n = items.filter(it => it.reject).length;
+  $('#sRej').textContent = n;
+  $('#del').disabled = !n;
+  $('#del').textContent = n ? `Delete ${n} rejected…` : 'Delete rejected…';
+}
+
+function starsHtml(r) {
+  let s = ''; for (let i = 1; i <= 5; i++) s += `<span class="${i <= r ? 'on' : ''}">★</span>`;
+  return `<span class="stars">${s}</span>`;
+}
+
+function preload(i) {
+  const it = view[i];
+  if (!it || isVideo(it) || !it.viewable || pre.has(it.key)) return;
+  const img = new Image();
+  img.src = `${MEDIA}/img/${enc(it.key)}`;
+  img.decode().catch(() => {});
+  pre.set(it.key, img);
+  while (pre.size > 10) pre.delete(pre.keys().next().value);
+}
+
+function skeleton() {
+  if (stage.querySelector('#main')) return;
+  stage.innerHTML = `<img id="main" alt=""><video id="vid" controls playsinline tabindex="-1" hidden></video>` +
+                    `<div class="note" hidden></div><div class="hud"></div><div class="pos"></div>`;
+  const img = stage.querySelector('#main'), vid = stage.querySelector('#vid');
+  img.addEventListener('click', e => toggleZoom(e));
+  img.addEventListener('error', () => { if (img.getAttribute('src')) note('No preview available', 'You can still rate, label or reject it.'); });
+  vid.addEventListener('error', () => { if (vid.getAttribute('src')) note("This video can't play in the browser", 'You can still rate, label or reject it.'); });
+}
+
+function note(title, text) {
+  const n = stage.querySelector('.note');
+  stage.querySelector('#main').hidden = true;
+  stage.querySelector('#vid').hidden = true;
+  n.innerHTML = `<b>${esc(title)}</b>${esc(text)}`;
+  n.hidden = false;
+}
+
+function stopVideo(vid) {
+  if (!vid.getAttribute('src')) return;
+  vid.pause(); vid.removeAttribute('src'); vid.load();
+}
+
+const infoCache = new Map();
+async function show() {
+  if (!view.length) {
+    stage.className = ''; zoomed = false;
+    stage.innerHTML = `<div class="empty">Nothing matches this filter.</div>`;
+    return;
+  }
+  cur = Math.min(Math.max(cur, 0), view.length - 1);
+  const it = view[cur];
+  skeleton();
+  const img = stage.querySelector('#main'), vid = stage.querySelector('#vid'), n = stage.querySelector('.note');
+  if (stage.dataset.key !== it.key) {
+    stage.dataset.key = it.key;
+    if (zoomed) toggleZoom();
+    n.hidden = true;
+    if (isVideo(it)) {
+      img.hidden = true; img.removeAttribute('src');
+      vid.hidden = false;
+      vid.src = `${MEDIA}/video/${enc(it.key)}`;
+      vid.play().catch(() => {});
+    } else {
+      stopVideo(vid); vid.hidden = true;
+      if (!it.viewable) {
+        img.removeAttribute('src');
+        note('No preview for HEIC', 'Install pillow-heif to see HEIC photos (see README). You can still rate, label or reject it.');
+      } else {
+        const p = pre.get(it.key);
+        if (p && !p.complete) { try { await p.decode(); } catch {} }
+        if (view[cur] !== it) return;  // user moved on while waiting
+        img.hidden = false;
+        img.src = `${MEDIA}/img/${enc(it.key)}`;
+      }
+    }
+  }
+  stage.classList.toggle('rejected', it.reject);
+  stage.classList.toggle('isvideo', isVideo(it));
+  const label = it.label ? `<span class="badge label" style="background:${LABELS[it.label] || '#666'}">${esc(it.label.toUpperCase())}</span>` : '';
+  const info = infoCache.get(it.key);
+  const exif = info ? [info.shutter, info.aperture, info.iso, info.focal].filter(Boolean).join(' · ') : '';
+  const types = [...new Set(it.files.map(f => f.split('.').pop().toUpperCase()))].join('+');
+  stage.querySelector('.hud').innerHTML =
+    `<span class="name">${esc(it.name)}</span><span class="types">${esc(types)}</span>${starsHtml(it.rating)}${label}` +
+    (it.reject ? `<span class="badge reject">REJECT</span>` : '') + `<span class="exif">${esc(exif)}</span>`;
+  stage.querySelector('.pos').textContent = `${cur + 1} / ${view.length}`;
+  if (!info && it.render === 'native') api(`/info/${enc(it.key)}`).then(j => { infoCache.set(it.key, j); if (view[cur] === it) show(); }).catch(() => {});
+  [...strip.querySelectorAll('.th.cur')].forEach(d => d.classList.remove('cur'));
+  const th = strip.children[cur];
+  if (th) { th.classList.add('cur'); th.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'instant' }); }
+  for (const d of [1, 2, 3, -1]) preload(cur + d);
+}
+
+function go(delta) {
+  if (!view.length) return;
+  const f = $('#filter').value;
+  // Leave items that no longer match the filter behind as we move on.
+  const left = view[cur];
+  const next = Math.min(Math.max(cur + delta, 0), view.length - 1);
+  if (next === cur) return;
+  const target = view[next];
+  if (!matches(left, f)) { rebuild(target.key); return; }
+  cur = next; show();
+}
+
+function toggleZoom(e) {
+  const img = stage.querySelector('#main');
+  if (!img || img.hidden) return;
+  if (!zoomed) {
+    const r = img.getBoundingClientRect();
+    const fx = e ? (e.clientX - r.left) / r.width : .5, fy = e ? (e.clientY - r.top) / r.height : .5;
+    zoomed = true; stage.classList.add('zoom');
+    stage.scrollLeft = fx * img.naturalWidth - stage.clientWidth / 2;
+    stage.scrollTop = fy * img.naturalHeight - stage.clientHeight / 2;
+  } else {
+    zoomed = false; stage.classList.remove('zoom');
+  }
+}
+
+// Apply {rating?, label?, reject?} to an item: optimistic UI, then save.
+async function change(it, patch, record = true) {
+  if (!it) return;
+  // Rating a rejected item means you changed your mind: un-reject it.
+  if (record && 'rating' in patch && it.reject) patch.reject = false;
+  const fields = Object.keys(patch).filter(k => it[k] !== patch[k]);
+  if (!fields.length) return false;
+  const prev = Object.fromEntries(fields.map(k => [k, it[k]]));
+  Object.assign(it, patch);
+  if (record) undo.push({ it, prev });
+  refresh(it);
+  try {
+    for (const k of fields) {
+      if (k === 'rating') await api('/api/rate', { key: it.key, rating: it.rating });
+      if (k === 'label') await api('/api/label', { key: it.key, label: it.label });
+      if (k === 'reject') await api('/api/reject', { key: it.key, reject: it.reject });
+    }
+  } catch (e) {
+    Object.assign(it, prev); refresh(it);
+    toast(`Couldn't save ${it.name}: ${e.message}`, true);
+  }
+  return true;
+}
+
+function rate(r) {
+  const it = view[cur];
+  change(it, { rating: r });
+  if (autoAdvance) go(1);
+}
+
+function toggleReject() {
+  const it = view[cur];
+  if (!it) return;
+  change(it, { reject: !it.reject });
+  if (autoAdvance && it.reject) go(1);
+}
+
+function toggleRed() {
+  const it = view[cur];
+  if (!it) return;
+  change(it, { label: it.label === 'Red' ? null : 'Red' });
+}
+
+async function doUndo() {
+  const u = undo.pop();
+  if (!u) return toast('Nothing to undo');
+  const { it, prev } = u;
+  await change(it, { ...prev }, false);
+  const i = view.indexOf(it);
+  if (i >= 0) { cur = i; show(); } else rebuild(it.key);
+  toast(`Undid ${it.name}`);
+}
+
+function refresh(it) {
+  const i = view.indexOf(it);
+  if (i >= 0) paintThumb(i);
+  stats();
+  if (view[cur] === it) show();
+}
+
+function openDelete() {
+  const rej = items.filter(it => it.reject);
+  if (!rej.length) return;
+  const files = rej.reduce((n, it) => n + it.files.length, 0);
+  $('#delTitle').textContent = `Delete ${rej.length} rejected item${rej.length > 1 ? 's' : ''} (${files} files)?`;
+  $('#delList').innerHTML = rej.map(it => `${esc(it.name)}  <span style="opacity:.6">(${esc(it.files.join(', '))})</span>`).join('<br>');
+  $('#delModal').classList.add('show');
+  $('#delGo').focus();
+}
+
+async function doDelete() {
+  $('#delGo').disabled = true;
+  stopVideo(stage.querySelector('#vid') || document.createElement('video'));  // release the file
+  try {
+    const j = await api('/api/delete-rejects', {});
+    const gone = new Set(j.deleted);
+    const keepKey = view.slice(cur).find(it => !gone.has(it.key))?.key || view.slice(0, cur).reverse().find(it => !gone.has(it.key))?.key;
+    items = items.filter(it => !gone.has(it.key));
+    stage.dataset.key = '';
+    rebuild(keepKey);
+    toast(j.failed.length ? `Deleted ${j.deleted.length}; ${j.failed.length} failed (in use?)` : `Moved ${j.deleted.length} items to the Recycle Bin`, !!j.failed.length);
+  } catch (e) { toast(`Delete failed: ${e.message}`, true); }
+  $('#delGo').disabled = false;
+  $('#delModal').classList.remove('show');
+}
+
+function setAuto(v) {
+  autoAdvance = v; $('#auto').classList.toggle('on', v);
+  try { localStorage.setItem('pc.auto', v ? '1' : '0'); } catch {}
+}
+
+document.addEventListener('keydown', e => {
+  const modal = document.querySelector('.modal.show');
+  if (modal) {
+    if (e.key === 'Escape') modal.classList.remove('show');
+    if (e.key === 'Enter' && modal.id === 'delModal') { e.preventDefault(); doDelete(); }
+    return;
+  }
+  if (e.target.tagName === 'SELECT' && e.key.startsWith('Arrow')) return;
+  if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); return doUndo(); }
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (k === 'ArrowRight' || k === ' ' || k === 'ArrowDown') { e.preventDefault(); go(1); }
+  else if (k === 'ArrowLeft' || k === 'Backspace' || k === 'ArrowUp') { e.preventDefault(); go(-1); }
+  else if (k === 'Home') { cur = 0; show(); }
+  else if (k === 'End') { cur = view.length - 1; show(); }
+  else if (/^[0-5]$/.test(k)) rate(+k);
+  else if (k === 'x') toggleReject();
+  else if (k === 'r') toggleRed();
+  else if (k === 'z') toggleZoom();
+  else if (k === 'p') { const v = stage.querySelector('#vid'); if (v && !v.hidden) v.paused ? v.play() : v.pause(); }
+  else if (k === 'a') setAuto(!autoAdvance);
+  else if (k === 'f') { const s = $('#filter'); s.selectedIndex = (s.selectedIndex + 1) % s.options.length; s.dispatchEvent(new Event('change')); toast(s.options[s.selectedIndex].text); }
+  else if (k === 'Delete') openDelete();
+  else if (k === '?') $('#helpModal').classList.add('show');
+});
+
+strip.addEventListener('click', e => { const d = e.target.closest('.th'); if (d) { cur = +d.dataset.i; show(); } });
+strip.addEventListener('wheel', e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { strip.scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false });
+$('#filter').addEventListener('change', e => { e.target.blur(); rebuild(view[cur]?.key); });
+$('#auto').addEventListener('click', e => { setAuto(!autoAdvance); e.target.blur(); });
+$('#help').addEventListener('click', e => { $('#helpModal').classList.add('show'); e.target.blur(); });
+$('#helpClose').addEventListener('click', () => $('#helpModal').classList.remove('show'));
+$('#del').addEventListener('click', e => { e.target.blur(); openDelete(); });
+$('#delCancel').addEventListener('click', () => $('#delModal').classList.remove('show'));
+$('#delGo').addEventListener('click', doDelete);
+
+(async () => {
+  setAuto(autoAdvance);
+  try {
+    const j = await api('/api/list');
+    items = j.items;
+    MEDIA = j.media; HEIF = j.heif;
+    $('#folder').textContent = j.folder;
+    document.title = `PhotoCull — ${j.folder.split(/[\\/]/).pop()}`;
+    rebuild(items.find(it => !it.rating && !it.reject)?.key);
+  } catch (e) { stage.innerHTML = `<div class="empty">Couldn't load folder: ${esc(e.message)}</div>`; }
+})();
+</script>
+</body>
+</html>
