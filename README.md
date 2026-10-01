@@ -22,8 +22,8 @@ Requirements on the machine: **Windows 10 or 11** and a modern browser
 (Chrome, Edge or Firefox). Optionally **[ffmpeg](https://ffmpeg.org/download.html)**
 on the `PATH` for video thumbnails; videos still play without it.
 
-To get the exe, [build it](#build-the-portable-exe) (a minute or so), or copy
-one someone else built. The first launch takes a few seconds while Windows
+A ready-built exe is committed at `dist\PhotoCull.exe`; to make a fresh one,
+[build it](#build-the-portable-exe) (a minute or so). The first launch takes a few seconds while Windows
 unpacks it; Windows SmartScreen may ask you to confirm the first time because
 the exe isn't code-signed (*More info → Run anyway*).
 
@@ -68,8 +68,8 @@ conda run -n photocull pyinstaller photocull.spec --noconfirm --clean
 
 The result is `dist\PhotoCull.exe` (about 20 MB), built from `photocull.spec`
 with the icon in `assets\`. Rebuild it after changing any `.py` or `.html` file.
-`build\` and `dist\` are ignored by git; share the exe directly (or attach it
-to a GitHub release).
+`dist\PhotoCull.exe` is committed so a ready-built copy is always in the repo;
+commit it again after rebuilding. (`build\` is ignored.)
 
 ## Command line
 
@@ -91,13 +91,22 @@ conda run -n photocull python photocull.py "M:\all\Pics-2sort-AB\101D7500"
 
 ## Using it
 
+There are two views. **Single view** shows one large photo with a filmstrip
+underneath; the current photo is lifted and outlined in blue. **Grid view**
+(press **G** or the *Grid* button) fills the window with thumbnails; drag the
+slider in the header to resize them, and click a photo to open it. Rating,
+labelling and rejecting work in both views.
+
 Before culling a folder in PhotoCull, **close NX Studio** (or refresh its folder
 view afterwards). Otherwise NX Studio can overwrite the new ratings from its cache.
 
 
 | Key | Action |
 |---|---|
-| ← → / Space / Backspace | Previous / next |
+| G | Switch between grid and single-photo view |
+| Enter / click | Grid: open the selected photo in single view |
+| Esc | Single view: back to the grid |
+| ← → / Space / Backspace | Previous / next (↑ ↓ move by rows in the grid) |
 | X | Toggle reject |
 | 1–5, 0 | Set / clear stars |
 | S (or R) | Toggle social media: shareable, no people (stored as the Red label in NX Studio) |

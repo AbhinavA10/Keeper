@@ -1,3 +1,5 @@
 __pycache__/
 build/
-dist/
+# Build output is ignored except the released exe, which is committed.
+dist/*
+!dist/PhotoCull.exe
