@@ -29,13 +29,15 @@ the exe isn't code-signed (*More info → Run anyway*).
 
 ## Install from source (for running or building)
 
-You need **Anaconda or Miniconda**. Clone the repo and create the `photocull`
-conda environment from `environment.yml` (Python, Pillow, pillow-heif for
-iPhone HEIC photos, and PyInstaller for building the exe):
+You need **Windows 10 or 11** and **Anaconda or Miniconda**. Clone the repo and
+create the `photocull` conda environment from `environment.yml` (Python,
+Pillow, pillow-heif for iPhone HEIC photos, and PyInstaller for building the exe):
 
 ```bash
-git clone git@github.com:AbhinavA10/nx-sorting.git
+git clone https://github.com/AbhinavA10/nx-sorting.git
 ```
+
+(or `git clone git@github.com:AbhinavA10/nx-sorting.git` if you use SSH keys with GitHub)
 
 ```bash
 cd nx-sorting
@@ -44,6 +46,9 @@ cd nx-sorting
 ```bash
 conda env create -f environment.yml
 ```
+
+This takes about a minute. If it fails with a certificate or HTTP 429 error, see
+[Troubleshooting](#troubleshooting).
 
 After `environment.yml` changes, update the environment with:
 
@@ -63,7 +68,7 @@ Anaconda in your user folder). To use a different Python, set
 ### Build the portable exe
 
 ```bash
-conda run -n photocull pyinstaller photocull.spec --noconfirm --clean
+conda run --no-capture-output -n photocull pyinstaller photocull.spec --noconfirm --clean
 ```
 
 The result is `dist\PhotoCull.exe` (about 20 MB), built from `photocull.spec`
@@ -80,8 +85,11 @@ PhotoCull.exe "M:\all\Pics-2sort-AB\101D7500"
 ```
 
 ```bash
-conda run -n photocull python photocull.py "M:\all\Pics-2sort-AB\101D7500"
+conda run --no-capture-output -n photocull python photocull.py "M:\all\Pics-2sort-AB\101D7500"
 ```
+
+(`--no-capture-output` matters: without it, `conda run` holds back all of
+PhotoCull's messages, including the URL to open, until you quit.)
 
 | Option | Effect |
 |---|---|
@@ -151,7 +159,7 @@ HEVC in Chrome) can't play there, but they can still be culled.
 | Problem | Fix |
 |---|---|
 | `Could not find the "photocull" conda environment` | Run `conda env create -f environment.yml`, or use `PhotoCull.exe`. |
-| `conda env create` fails with `CERTIFICATE_VERIFY_FAILED` | Antivirus or a proxy is inspecting HTTPS. Run `set CONDA_SSL_VERIFY=truststore` in the same terminal first, so conda uses the Windows certificate store. |
+| `conda env create` fails with `CERTIFICATE_VERIFY_FAILED` | Antivirus or a proxy is inspecting HTTPS. In the same terminal, first run `set CONDA_SSL_VERIFY=truststore` (Command Prompt) or `$env:CONDA_SSL_VERIFY="truststore"` (PowerShell), so conda uses the Windows certificate store. |
 | `conda env create` fails with `HTTP 429` / "requires conda client registration" | Anaconda's `defaults` channel is blocked on your network. `environment.yml` already uses only conda-forge; make sure you're using the repo's copy. |
 | Windows or antivirus blocks `PhotoCull.exe` | Unsigned PyInstaller exes are sometimes flagged. Allow it, or run from source with `PhotoCull.bat`. |
 | HEIC photos show "No preview" | Running from an old environment: `conda env update -f environment.yml --prune`. |
