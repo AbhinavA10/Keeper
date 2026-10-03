@@ -1,11 +1,56 @@
-# PhotoCull
+<h1 align="center">PhotoCull</h1>
 
-Fast keyboard culling for photo folders: Nikon NEF+JPG pairs (NX Studio
-compatible), phone photos and videos. Rate, label and reject photos in your
-browser, then send the rejects to the Recycle Bin in one go.
+<p align="center">
+  <b>Cull a thousand photos in minutes, from the keyboard.</b><br>
+  Rate, label and reject Nikon NEF+JPG pairs, phone photos and videos, then clear out the rejects in one go.
+</p>
 
-PhotoCull never modifies your photo or video files. It only reads them, and
-deleting rejects to the Recycle Bin is the only change it ever makes to them.
+<p align="center">
+  <img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows&logoColor=white">
+  <img alt="Portable exe" src="https://img.shields.io/badge/portable-single%20.exe-2ea44f">
+  <img alt="NX Studio compatible" src="https://img.shields.io/badge/NX%20Studio-compatible-f5b301">
+  <img alt="Python 3.10" src="https://img.shields.io/badge/python-3.10-3776AB?logo=python&logoColor=white">
+</p>
+
+![PhotoCull single-photo view: a 5-star photo marked for social media, with the filmstrip below](docs/images/single.jpg)
+
+## Why PhotoCull
+
+**⚡ Built for speed.** One key per decision: `1`–`5` to rate, `X` to reject,
+`S` to flag for social media. PhotoCull jumps to the next photo and preloads
+the ones after it, so a whole card is done before your coffee cools.
+
+**🔗 Plays nicely with NX Studio.** Ratings and labels go into NX Studio's own
+sidecar files, so when you open the folder in NX Studio for editing, your
+picks are already there. NEF+JPG pairs are always treated as one photo.
+
+**🛡️ Your originals are never touched.** PhotoCull only *reads* your photos.
+Everything it records lives in sidecars or a small `.photocull.json`, and
+deleting is a deliberate, reviewed step that goes to the Recycle Bin.
+
+**📱 Not just Nikon.** Phone photos (including iPhone HEIC and Live Photos),
+other cameras' raw files and videos all work too.
+
+### See the whole shoot at once
+
+Switch to the grid (`G`) to scan a folder at a glance. Stars, social-media
+picks and rejects show on every thumbnail; click any photo to open it full size.
+
+![Grid view with star ratings, SOCIAL tags and rejected photos crossed out](docs/images/grid.jpg)
+
+### Delete with confidence
+
+Rejects aren't deleted as you go. When you're ready, press `Del` to review
+exactly which files will go, then send every file of each photo (NEF, JPG,
+Live Photo video and NX Studio sidecars) to the Recycle Bin together.
+
+![Delete dialog listing the rejected photos and their files before moving them to the Recycle Bin](docs/images/delete.jpg)
+
+### Everything is a keystroke away
+
+Press `?` any time for the full list of shortcuts.
+
+![Keyboard shortcuts overlay](docs/images/shortcuts.jpg)
 
 ## Quick start: portable exe (nothing to install)
 
@@ -96,6 +141,11 @@ PhotoCull's messages, including the URL to open, until you quit.)
 | *(no folder)* | Opens a folder picker |
 | `--port=8765` | Use a fixed port instead of a random free one |
 | `--no-browser` | Don't open the browser automatically (the URL is printed) |
+
+The page itself also accepts a starting state in its URL, handy for bookmarks:
+`?view=grid` or `?view=single`, `&strip=1` (show the filmstrip),
+`&item=DSC_1234` (open that photo), `&filter=unrated` (or `rejected`, `red`,
+`r3` for 3★+ …) and `&help=1` (show the shortcuts).
 
 ## Using it
 

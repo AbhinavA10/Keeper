@@ -27,6 +27,7 @@
   header .title { font-weight: 600; letter-spacing: .2px; }
   /* The folder path gives up space first so the controls never wrap. */
   header .folder { color: var(--dim); overflow: hidden; text-overflow: ellipsis; flex: 1 1 0; min-width: 40px; }
+  header .folder::before { content: "›"; margin-right: 8px; color: #4b5563; }
   header .spacer { display: none; }
   @media (max-width: 1250px) { header .stat.opt { display: none; } }
   .stat { color: var(--dim); white-space: nowrap; }
@@ -120,6 +121,7 @@
   .card .row { display: flex; gap: 8px; justify-content: flex-end; }
   kbd { background: var(--panel2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 6px; font: 12px Consolas, monospace; }
   .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; }
+  .keys > kbd { justify-self: start; align-self: start; white-space: nowrap; }
   .small { color: var(--dim); font-size: 12px; }
 </style>
 </head>
@@ -633,13 +635,23 @@ $('#delGo').addEventListener('click', doDelete);
     if (px) { $('#gsize').value = px; setGridSize(px); }
     if (localStorage.getItem('pc.mode') === 'grid') { mode = 'grid'; $('#app').classList.add('gridmode'); $('#viewBtn').textContent = '▣ Single'; }
   } catch {}
+  // Optional starting state from the URL (bookmarks, screenshots):
+  // ?view=grid|single  &strip=1|0  &item=<name>  &filter=<filter value>  &help=1
+  const q = new URLSearchParams(location.search);
+  if (q.has('view')) { mode = q.get('view') === 'grid' ? 'grid' : 'single'; $('#app').classList.toggle('gridmode', mode === 'grid'); $('#viewBtn').textContent = mode === 'grid' ? '▣ Single' : '▦ Grid'; }
+  if (q.has('strip')) setStrip(q.get('strip') === '1');
+  if (q.has('filter')) $('#filter').value = q.get('filter');
   try {
     const j = await api('/api/list');
     items = j.items;
     MEDIA = j.media; HEIF = j.heif;
-    $('#folder').textContent = j.folder;
-    document.title = `PhotoCull — ${j.folder.split(/[\\/]/).pop()}`;
-    rebuild(items.find(it => !it.rating && !it.reject)?.key);
+    const folderName = j.folder.split(/[\\/]/).filter(Boolean).pop() || j.folder;
+    $('#folder').textContent = folderName;
+    $('#folder').title = j.folder;
+    document.title = `PhotoCull — ${folderName}`;
+    const wanted = (q.get('item') || '').toLowerCase();
+    rebuild(items.find(it => it.key === wanted)?.key || items.find(it => !it.rating && !it.reject)?.key);
+    if (q.get('help') === '1') $('#helpModal').classList.add('show');
   } catch (e) { stage.innerHTML = `<div class="empty">Couldn't load folder: ${esc(e.message)}</div>`; }
 })();
 </script>
