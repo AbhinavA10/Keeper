@@ -1,7 +1,7 @@
-"""File types, browser previews and thumbnails for PhotoCull.
+"""File types, browser previews and thumbnails for Keeper.
 
 Browsers can show JPEG/PNG/WebP/GIF directly. Everything else is turned into a
-JPEG preview here and cached under %LOCALAPPDATA%\\PhotoCull:
+JPEG preview here and cached under %LOCALAPPDATA%\\Keeper:
   * HEIC/HEIF (phones) - decoded with pillow-heif when it is installed;
   * raw files with no JPEG next to them - the camera's embedded JPEG preview;
   * videos - a frame grabbed with ffmpeg (thumbnails only; playback is native).
@@ -37,7 +37,7 @@ CONTENT_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png
                  ".m4v": "video/mp4", ".3gp": "video/3gpp", ".webm": "video/webm",
                  ".mkv": "video/x-matroska", ".avi": "video/x-msvideo", ".mts": "video/mp2t"}
 
-CACHE_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "PhotoCull")
+CACHE_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Keeper")
 THUMB_PX = 320
 FFMPEG = shutil.which("ffmpeg")
 

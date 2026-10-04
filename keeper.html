@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PhotoCull</title>
+<title>Keeper</title>
 <style>
   :root {
     --bg: #0e0f11; --panel: #17191c; --panel2: #1f2226; --line: #2a2e33;
@@ -128,7 +128,7 @@
 <body>
 <div id="app" class="nostrip">
   <header>
-    <span class="title">PhotoCull</span>
+    <span class="title">Keeper</span>
     <span class="folder" id="folder"></span>
     <span class="spacer"></span>
     <span class="stat saving" id="saving">Saved</span>
@@ -193,7 +193,7 @@
       <kbd>Home End</kbd><span>First / last</span>
       <kbd>Del</kbd><span>Review and delete rejected items</span>
     </div>
-    <div class="small">Nikon photos keep ratings and labels in NX Studio's own files. Other photos and videos keep them in <code>.photocull.json</code> in the folder.</div>
+    <div class="small">Nikon photos keep ratings and labels in NX Studio's own files. Other photos and videos keep them in <code>.keeper.json</code> in the folder.</div>
     <div class="row"><button id="helpClose">Close</button></div>
   </div>
 </div>
@@ -219,7 +219,7 @@ const enc = k => encodeURIComponent(k);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const isVideo = it => it.render === 'video';
 
-// Calls to PhotoCull's own server. Network-level failures (a reset or stalled
+// Calls to Keeper's own server. Network-level failures (a reset or stalled
 // connection; antivirus web shields that scan local traffic cause these) are
 // retried: every call is safe to repeat (setting a rating twice is harmless).
 // Errors reported by the server itself are not retried.
@@ -648,7 +648,7 @@ $('#delGo').addEventListener('click', doDelete);
     const folderName = j.folder.split(/[\\/]/).filter(Boolean).pop() || j.folder;
     $('#folder').textContent = folderName;
     $('#folder').title = j.folder;
-    document.title = `PhotoCull — ${folderName}`;
+    document.title = `Keeper — ${folderName}`;
     const wanted = (q.get('item') || '').toLowerCase();
     rebuild(items.find(it => it.key === wanted)?.key || items.find(it => !it.rating && !it.reject)?.key);
     if (q.get('help') === '1') $('#helpModal').classList.add('show');

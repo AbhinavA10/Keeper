@@ -1,4 +1,4 @@
-<h1 align="center">PhotoCull</h1>
+<h1 align="center">Keeper</h1>
 
 <p align="center">
   <b>Cull a thousand photos in minutes, from the keyboard.</b><br>
@@ -12,20 +12,20 @@
   <img alt="Python 3.10" src="https://img.shields.io/badge/python-3.10-3776AB?logo=python&logoColor=white">
 </p>
 
-![PhotoCull single-photo view: a 5-star photo marked for social media, with the filmstrip below](docs/images/single.jpg)
+![Keeper single-photo view: a 5-star photo marked for social media, with the filmstrip below](docs/images/single.jpg)
 
-## Why PhotoCull
+## Why Keeper
 
 **⚡ Built for speed.** One key per decision: `1`–`5` to rate, `X` to reject,
-`S` to flag for social media. PhotoCull jumps to the next photo and preloads
+`S` to flag for social media. Keeper jumps to the next photo and preloads
 the ones after it, so a whole card is done before your coffee cools.
 
 **🔗 Plays nicely with NX Studio.** Ratings and labels go into NX Studio's own
 sidecar files, so when you open the folder in NX Studio for editing, your
 picks are already there. NEF+JPG pairs are always treated as one photo.
 
-**🛡️ Your originals are never touched.** PhotoCull only *reads* your photos.
-Everything it records lives in sidecars or a small `.photocull.json`, and
+**🛡️ Your originals are never touched.** Keeper only *reads* your photos.
+Everything it records lives in sidecars or a small `.keeper.json`, and
 deleting is a deliberate, reviewed step that goes to the Recycle Bin.
 
 **📱 Not just Nikon.** Phone photos (including iPhone HEIC and Live Photos),
@@ -54,20 +54,20 @@ Press `?` any time for the full list of shortcuts.
 
 ## Quick start: portable exe (nothing to install)
 
-`PhotoCull.exe` is a single file with Python and everything else built in.
+`Keeper.exe` is a single file with Python and everything else built in.
 Copy it anywhere (Desktop, USB stick, another PC) and:
 
 * **double-click it** and choose a photo folder, or
 * **drag a folder onto it**.
 
-A console window opens, scans the folder, and opens PhotoCull in your default
+A console window opens, scans the folder, and opens Keeper in your default
 browser. Keep the console window open while you work; **close it to quit**.
 
 Requirements on the machine: **Windows 10 or 11** and a modern browser
 (Chrome, Edge or Firefox). Optionally **[ffmpeg](https://ffmpeg.org/download.html)**
 on the `PATH` for video thumbnails; videos still play without it.
 
-A ready-built exe is committed at `dist\PhotoCull.exe`; to make a fresh one,
+A ready-built exe is committed at `dist\Keeper.exe`; to make a fresh one,
 [build it](#build-the-portable-exe) (a minute or so). The first launch takes a few seconds while Windows
 unpacks it; Windows SmartScreen may ask you to confirm the first time because
 the exe isn't code-signed (*More info → Run anyway*).
@@ -75,7 +75,7 @@ the exe isn't code-signed (*More info → Run anyway*).
 ## Install from source (for running or building)
 
 You need **Windows 10 or 11** and **Anaconda or Miniconda**. Clone the repo and
-create the `photocull` conda environment from `environment.yml` (Python,
+create the `keeper` conda environment from `environment.yml` (Python,
 Pillow, pillow-heif for iPhone HEIC photos, and PyInstaller for building the exe):
 
 ```bash
@@ -103,22 +103,22 @@ conda env update -f environment.yml --prune
 
 ### Run from source
 
-* **Double-click `PhotoCull.bat`** and choose a photo folder, or
-* **drag a folder onto `PhotoCull.bat`**.
+* **Double-click `Keeper.bat`** and choose a photo folder, or
+* **drag a folder onto `Keeper.bat`**.
 
-`PhotoCull.bat` uses the `photocull` conda environment (from Miniconda or
+`Keeper.bat` uses the `keeper` conda environment (from Miniconda or
 Anaconda in your user folder). To use a different Python, set
-`PHOTOCULL_PYTHON` to its `python.exe`.
+`KEEPER_PYTHON` to its `python.exe`.
 
 ### Build the portable exe
 
 ```bash
-conda run --no-capture-output -n photocull pyinstaller photocull.spec --noconfirm --clean
+conda run --no-capture-output -n keeper pyinstaller keeper.spec --noconfirm --clean
 ```
 
-The result is `dist\PhotoCull.exe` (about 20 MB), built from `photocull.spec`
+The result is `dist\Keeper.exe` (about 20 MB), built from `keeper.spec`
 with the icon in `assets\`. Rebuild it after changing any `.py` or `.html` file.
-`dist\PhotoCull.exe` is committed so a ready-built copy is always in the repo;
+`dist\Keeper.exe` is committed so a ready-built copy is always in the repo;
 commit it again after rebuilding. (`build\` is ignored.)
 
 ## Command line
@@ -126,20 +126,20 @@ commit it again after rebuilding. (`build\` is ignored.)
 The exe and the script take the same arguments:
 
 ```bash
-PhotoCull.exe "M:\all\Pics-2sort-AB\101D7500"
+Keeper.exe "M:\all\Pics-2sort-AB\101D7500"
 ```
 
 ```bash
-conda run --no-capture-output -n photocull python photocull.py "M:\all\Pics-2sort-AB\101D7500"
+conda run --no-capture-output -n keeper python keeper.py "M:\all\Pics-2sort-AB\101D7500"
 ```
 
 (`--no-capture-output` matters: without it, `conda run` holds back all of
-PhotoCull's messages, including the URL to open, until you quit.)
+Keeper's messages, including the URL to open, until you quit.)
 
 | Option | Effect |
 |---|---|
 | *(no folder)* | Opens a folder picker |
-| `--port=8765` | Use a fixed port instead of a random free one |
+| `--port=8765` | Use this port (default 47615, or any free port if that's taken) |
 | `--no-browser` | Don't open the browser automatically (the URL is printed) |
 
 The page itself also accepts a starting state in its URL, handy for bookmarks:
@@ -156,7 +156,7 @@ photo is lifted and outlined in blue. **Grid view**
 slider in the header to resize them, and click a photo to open it. Rating,
 labelling and rejecting work in both views.
 
-Before culling a folder in PhotoCull, **close NX Studio** (or refresh its folder
+Before culling a folder in Keeper, **close NX Studio** (or refresh its folder
 view afterwards). Otherwise NX Studio can overwrite the new ratings from its cache.
 
 
@@ -201,34 +201,37 @@ HEVC in Chrome) can't play there, but they can still be culled.
   folder) are created in NX Studio's own format. NX Studio 1.9 shows them as
   normal ratings and colour labels.
 * **Everything else** (phone photos, videos): ratings and labels are kept in
-  `.photocull.json` in the photo folder.
-* **Rejects** are always kept in `.photocull.json`, so they never appear in NX Studio.
+  `.keeper.json` in the photo folder.
+* **Rejects** are always kept in `.keeper.json`, so they never appear in NX Studio.
+* Keeper was previously called PhotoCull. Folders culled with it keep their
+  rejects: the old `.photocull.json` is read and replaced by `.keeper.json`
+  the next time anything changes.
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
-| `Could not find the "photocull" conda environment` | Run `conda env create -f environment.yml`, or use `PhotoCull.exe`. |
+| `Could not find the "keeper" conda environment` | Run `conda env create -f environment.yml`, or use `Keeper.exe`. |
 | `conda env create` fails with `CERTIFICATE_VERIFY_FAILED` | Antivirus or a proxy is inspecting HTTPS. In the same terminal, first run `set CONDA_SSL_VERIFY=truststore` (Command Prompt) or `$env:CONDA_SSL_VERIFY="truststore"` (PowerShell), so conda uses the Windows certificate store. |
 | `conda env create` fails with `HTTP 429` / "requires conda client registration" | Anaconda's `defaults` channel is blocked on your network. `environment.yml` already uses only conda-forge; make sure you're using the repo's copy. |
-| Windows or antivirus blocks `PhotoCull.exe` | Unsigned PyInstaller exes are sometimes flagged. Allow it, or run from source with `PhotoCull.bat`. |
+| Windows or antivirus blocks `Keeper.exe` | Unsigned PyInstaller exes are sometimes flagged. Allow it, or run from source with `Keeper.bat`. |
 | HEIC photos show "No preview" | Running from an old environment: `conda env update -f environment.yml --prune`. |
 | Video thumbnails are blank | Install ffmpeg and make sure `ffmpeg` runs from a new terminal. |
-| Pages sometimes take a few seconds to load, or show "Failed to fetch" | Antivirus web protection (e.g. AVG/Avast Web Shield) can scan PhotoCull's local traffic and stall or reset it. PhotoCull retries automatically; if it keeps happening, add an exception for `127.0.0.1` in the antivirus settings. |
+| Pages sometimes take a few seconds to load, or show "Failed to fetch" | Antivirus web protection (e.g. AVG/Avast Web Shield) can scan Keeper's local traffic and stall or reset it. Keeper retries automatically; if it keeps happening, add an exception for `127.0.0.1` in the antivirus settings. |
 | A rejected item fails to delete | The file is open in another program (e.g. NX Studio). Close it and press **Del** again. |
 | Ratings don't show in NX Studio | Refresh the folder in NX Studio, or close and reopen it. |
 
-Previews and thumbnails are cached in `%LOCALAPPDATA%\PhotoCull`. It's safe
+Previews and thumbnails are cached in `%LOCALAPPDATA%\Keeper`. It's safe
 to delete that folder at any time; it is rebuilt as needed.
 
 ## Project layout
 
 | File | Purpose |
 |---|---|
-| `PhotoCull.bat` | Runs the app from source with the `photocull` conda environment |
-| `photocull.py` | Local web server, folder scanning, grouping, Recycle Bin deletes |
-| `photocull.html` | The browser UI |
+| `Keeper.bat` | Runs the app from source with the `keeper` conda environment |
+| `keeper.py` | Local web server, folder scanning, grouping, Recycle Bin deletes |
+| `keeper.html` | The browser UI |
 | `xmp_rating.py` | Reading and writing NX Studio sidecars (`.nksc`) |
 | `media.py` | File types, previews (HEIC, raw, video) and thumbnails |
 | `environment.yml` | Conda environment (runtime + build tools) |
-| `photocull.spec`, `assets\photocull.ico` | PyInstaller build of `PhotoCull.exe` and its icon |
+| `keeper.spec`, `assets\keeper.ico` | PyInstaller build of `Keeper.exe` and its icon |

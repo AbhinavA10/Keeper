@@ -11,7 +11,7 @@ A label is written as <photoshop:Urgency>N</photoshop:Urgency> plus
 <xmp:Label>Name</xmp:Label>; removing it deletes both.
 
 Original photo files are only ever READ (for in-camera ratings). Everything
-PhotoCull stores goes into sidecars, which are created when missing.
+Keeper stores goes into sidecars, which are created when missing.
 """
 import base64
 import os

@@ -1,18 +1,19 @@
-"""PhotoCull - fast rating, labelling and culling of photo folders.
+"""Keeper - fast rating, labelling and culling of photo folders.
 
-Usage:  python photocull.py [folder]
+Usage:  python keeper.py [folder]
 Opens a browser UI.
 
 Files sharing a base name are one item (NEF+JPG, HEIC+MOV Live Photo, ...).
 Nikon items keep ratings and labels where NX Studio reads them (see
 xmp_rating.py); everything else, and all rejects, live in
-<folder>/.photocull.json. Deleted items (every file in the group plus NX Studio
+<folder>/.keeper.json. Deleted items (every file in the group plus NX Studio
 sidecars) go to the Recycle Bin.
 """
 import ctypes
 import json
 import os
 import re
+import socket
 import sys
 import threading
 import webbrowser
@@ -25,10 +26,11 @@ from PIL import Image, ExifTags
 import media as M
 import xmp_rating as X
 
-# Bundled files (photocull.html) live in PyInstaller's unpack folder when
-# running as PhotoCull.exe, and next to this script otherwise.
+# Bundled files (keeper.html) live in PyInstaller's unpack folder when
+# running as Keeper.exe, and next to this script otherwise.
 HERE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-STATE_FILE = ".photocull.json"
+STATE_FILE = ".keeper.json"
+LEGACY_STATE_FILE = ".photocull.json"  # written by the app before it was renamed
 NIKON_RAW = {".nef", ".nrw"}
 NIKON_NAME = re.compile(r"^(DSC_|_DSC|DSCN)\d", re.I)
 
@@ -58,11 +60,15 @@ class Catalogue:
 
     # -- state file: rejects for everything, ratings/labels for non-Nikon items
     def _load_state(self):
-        try:
-            with open(os.path.join(self.folder, STATE_FILE), encoding="utf-8") as f:
-                self.state.update(json.load(f))
-        except (OSError, ValueError):
-            pass
+        # Folders culled before the rename have .photocull.json; read it until
+        # the first save replaces it with .keeper.json.
+        for name in (STATE_FILE, LEGACY_STATE_FILE):
+            try:
+                with open(os.path.join(self.folder, name), encoding="utf-8") as f:
+                    self.state.update(json.load(f))
+                break
+            except (OSError, ValueError):
+                continue
         self.rejects = {r.lower() for r in self.state["rejects"]}
 
     def _save_state(self):
@@ -72,6 +78,9 @@ class Catalogue:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(self.state, f, indent=1, sort_keys=True)
         os.replace(tmp, path)
+        legacy = os.path.join(self.folder, LEGACY_STATE_FILE)
+        if os.path.exists(legacy):
+            os.remove(legacy)  # its contents now live in .keeper.json
 
     def scan(self):
         groups = {}
@@ -240,6 +249,12 @@ def exif_info(path):
 class Handler(BaseHTTPRequestHandler):
     cat: Catalogue = None
     media_url = ""
+    # Keep-alive: the browser closes connections, not us. On some PCs (seen
+    # with antivirus network filtering) a connection the server closes first
+    # loses the tail of a large response, so photos arrived truncated. Every
+    # response must therefore carry a Content-Length.
+    protocol_version = "HTTP/1.1"
+    timeout = 60  # drop idle keep-alive connections so threads don't pile up
 
     def log_message(self, *a):
         pass
@@ -270,6 +285,7 @@ class Handler(BaseHTTPRequestHandler):
             if start > end:
                 self.send_response(416)
                 self.send_header("Content-Range", f"bytes */{size}")
+                self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
             self.send_response(206)
@@ -295,7 +311,7 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         try:
             if path == "/":
-                with open(os.path.join(HERE, "photocull.html"), "rb") as f:
+                with open(os.path.join(HERE, "keeper.html"), "rb") as f:
                     return self._send(200, f.read(), "text/html; charset=utf-8")
             if path == "/api/list":
                 return self._send(200, {"folder": self.cat.folder, "media": self.media_url,
@@ -345,6 +361,38 @@ class Handler(BaseHTTPRequestHandler):
             self._send(500, {"error": f"{type(e).__name__}: {e}"})
 
 
+DEFAULT_PORT = 47615
+
+
+class Server(ThreadingHTTPServer):
+    daemon_threads = True
+    # The grid requests dozens of thumbnails at once; the default backlog of 5
+    # makes Windows reset the overflow connections.
+    request_queue_size = 128
+
+
+class ExclusiveServer(Server):
+    # On Windows, SO_REUSEADDR (Python's default here) lets a second process
+    # bind a port that's already in use; without it, a second Keeper's bind fails.
+    allow_reuse_address = False
+
+
+def start_main_server(port):
+    """Bind the page/API server.
+
+    Uses a fixed port by default because the browser keeps the page's saved
+    preferences (view, filmstrip, grid size...) per address, port included; a
+    random port each launch would forget them. Falls back to any free port if
+    that one is taken (e.g. a second Keeper window).
+    """
+    if port is not None:
+        return ExclusiveServer(("127.0.0.1", port), Handler)
+    try:
+        return ExclusiveServer(("127.0.0.1", DEFAULT_PORT), Handler)
+    except OSError:
+        return ExclusiveServer(("127.0.0.1", 0), Handler)
+
+
 def pick_folder():
     import tkinter as tk
     from tkinter import filedialog
@@ -364,21 +412,17 @@ def main():
     folder = os.path.abspath(folder)
     print(f"Scanning {folder} ...")
     Handler.cat = Catalogue(folder)
-    port = next((int(a.split("=", 1)[1]) for a in sys.argv if a.startswith("--port=")), 0)
-    ThreadingHTTPServer.daemon_threads = True
-    # The grid requests dozens of thumbnails at once; the default backlog of 5
-    # makes Windows reset the overflow connections.
-    ThreadingHTTPServer.request_queue_size = 128
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    port = next((int(a.split("=", 1)[1]) for a in sys.argv if a.startswith("--port=")), None)
+    server = start_main_server(port)
     # Photos are served from a second port: browsers allow only ~6 connections
     # per host, and big image downloads must never queue up rating saves.
-    media = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    media = Server(("127.0.0.1", 0), Handler)
     Handler.media_url = f"http://127.0.0.1:{media.server_port}"
     threading.Thread(target=media.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{server.server_port}/"
     items = Handler.cat.items.values()
     nikon = sum(i["nikon"] for i in items)
-    print(f"{len(items)} items ({nikon} Nikon, {len(items) - nikon} other). PhotoCull running at {url}")
+    print(f"{len(items)} items ({nikon} Nikon, {len(items) - nikon} other). Keeper running at {url}")
     if not M.HAVE_HEIF and any(i["render"] == "heif" for i in items):
         print("Note: HEIC photos can be culled but not previewed until pillow-heif is installed.")
     print("Close this window to quit.")
