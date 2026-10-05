@@ -46,21 +46,22 @@
   #stage #main { cursor: zoom-in; }
   #stage.zoom { overflow: auto; display: block; }
   #stage.zoom #main { max-width: none; max-height: none; cursor: zoom-out; }
-  #stage.rejected #main, #stage.rejected #vid { opacity: .35; filter: grayscale(.7); }
   #stage .note { color: var(--dim); font-size: 15px; text-align: center; max-width: 520px; line-height: 1.6; }
   #stage .note b { color: var(--text); display: block; font-size: 18px; margin-bottom: 4px; }
   [hidden] { display: none !important; }
 
-  .hud { position: absolute; left: 14px; bottom: 12px; display: flex; gap: 10px; align-items: center;
-    background: rgba(14,15,17,.72); backdrop-filter: blur(8px); padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line); pointer-events: none; }
-  #stage.isvideo .hud { bottom: auto; top: 12px; }
-  .hud .name { font-weight: 600; }
-  .hud .types { color: var(--dim); font-size: 11px; letter-spacing: .4px; }
-  .hud .exif { color: var(--dim); }
+  /* Narrow, stacked card in the top-left corner: on a wide screen it sits in
+     the empty margin beside a 3:2 photo instead of on top of it. */
+  .hud { position: absolute; left: 8px; top: 8px; width: 138px; display: flex; flex-direction: column; gap: 5px; align-items: flex-start;
+    background: rgba(14,15,17,.72); backdrop-filter: blur(8px); padding: 9px 10px; border-radius: 8px; border: 1px solid var(--line); pointer-events: none; }
+  .hud .name { font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hud .types { color: var(--dim); font-size: 11px; letter-spacing: .4px; margin-top: -4px; }
+  .hud .exif { color: var(--dim); font-size: 12px; line-height: 1.5; }
+  .hud .exif:empty { display: none; }
   .stars { color: #4a4f56; letter-spacing: 2px; font-size: 16px; }
   .stars .on { color: var(--accent); }
   .badge { padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 700; letter-spacing: .5px; }
-  .badge.reject { background: var(--reject); color: white; }
+  .badge.reject { background: #eab308; color: #1c1917; }
   .badge.label { color: white; }
   .pos { position: absolute; right: 14px; bottom: 12px; color: var(--dim); background: rgba(14,15,17,.72); padding: 5px 10px; border-radius: 8px; pointer-events: none; }
   #stage.isvideo .pos { bottom: auto; top: 12px; }
@@ -135,13 +136,15 @@
     <span class="stat opt"><b id="sTotal">0</b> items</span>
     <span class="stat opt"><b id="sUnrated">0</b> unrated</span>
     <span class="stat"><b id="sRed" style="color:var(--red)">0</b> social media</span>
+    <span class="stat"><b id="sBlue" style="color:var(--sel)">0</b> flagged</span>
     <span class="stat"><b id="sRej" style="color:var(--reject)">0</b> rejected</span>
-    <select id="filter" title="Filter (F)">
+    <select id="filter" title="Filter (Shift+F)">
       <option value="all">All items</option>
       <option value="unrated">Unrated</option>
       <option value="keep">Not rejected</option>
       <option value="rejected">Rejected</option>
       <option value="red">Social media</option>
+      <option value="blue">Flagged</option>
       <option value="r1">★ 1+</option>
       <option value="r2">★ 2+</option>
       <option value="r3">★ 3+</option>
@@ -177,18 +180,19 @@
     <h2>Keyboard shortcuts</h2>
     <div class="keys">
       <kbd>G</kbd><span>Switch between grid and single-photo view</span>
-      <kbd>Enter</kbd><span>Grid: open the selected photo (or click it)</span>
+      <kbd>Enter</kbd><span>Grid: open the selected photo (or click it again; the first click selects it)</span>
       <kbd>Esc</kbd><span>Single view: back to the grid</span>
       <kbd>T</kbd><span>Single view: show / hide the filmstrip of thumbnails</span>
-      <kbd>← →</kbd><span>Previous / next (also <kbd>Space</kbd>, <kbd>Backspace</kbd>); <kbd>↑ ↓</kbd> move by rows in the grid</span>
+      <kbd>← →</kbd><span>Previous / next (also <kbd>Space</kbd>, <kbd>Backspace</kbd>); <kbd>↑ ↓</kbd> move by rows in the grid. Single view skips rejected photos; open one from the grid to see it.</span>
       <kbd>X</kbd><span>Toggle reject</span>
       <kbd>1 – 5</kbd><span>Set star rating</span>
       <kbd>0</kbd><span>Clear rating</span>
       <kbd>S</kbd><span>Toggle social media — shareable, no people (red label in NX Studio; <kbd>R</kbd> also works)</span>
+      <kbd>F</kbd><span>Toggle flagged — needs more correction in NX Studio (blue label). A photo has one label, so this replaces social media.</span>
       <kbd>Z</kbd><span>Zoom to 100% (or click the photo)</span>
       <kbd>P</kbd><span>Play / pause video</span>
       <kbd>Ctrl Z</kbd><span>Undo last change</span>
-      <kbd>F</kbd><span>Cycle filter</span>
+      <kbd>Shift F</kbd><span>Cycle filter</span>
       <kbd>A</kbd><span>Toggle auto-advance</span>
       <kbd>Home End</kbd><span>First / last</span>
       <kbd>Del</kbd><span>Review and delete rejected items</span>
@@ -208,8 +212,8 @@ const undo = [];
 const pre = new Map();  // key -> Image, small LRU of decoded photos
 // What each NX Studio label means to you. The stored label stays "Red" so
 // NX Studio keeps showing it; only the name shown here changes.
-const LABEL_NAMES = { Red: 'Social media' };
-const LABEL_SHORT = { Red: 'Social' };  // fits on a thumbnail
+const LABEL_NAMES = { Red: 'Social media', Blue: 'Flagged' };
+const LABEL_SHORT = { Red: 'Social', Blue: 'Flagged' };  // fits on a thumbnail
 const labelName = l => LABEL_NAMES[l] || l;
 const LABELS = { Red: '#ef4444', Orange: '#f97316', Yellow: '#eab308', Green: '#22c55e', Blue: '#3b82f6',
                  Purple: '#a855f7', Pink: '#ec4899', Brown: '#a16207', Gray: '#9ca3af' };
@@ -263,6 +267,7 @@ function matches(it, f) {
     case 'keep': return !it.reject;
     case 'rejected': return it.reject;
     case 'red': return it.label === 'Red';
+    case 'blue': return it.label === 'Blue';
     case 'photos': return !isVideo(it);
     case 'videos': return isVideo(it);
     case 'all': return true;
@@ -363,6 +368,7 @@ function stats() {
   $('#sTotal').textContent = items.length;
   $('#sUnrated').textContent = items.filter(it => !it.rating && !it.reject).length;
   $('#sRed').textContent = items.filter(it => it.label === 'Red').length;
+  $('#sBlue').textContent = items.filter(it => it.label === 'Blue').length;
   const n = items.filter(it => it.reject).length;
   $('#sRej').textContent = n;
   $('#del').disabled = !n;
@@ -443,18 +449,34 @@ async function show() {
       }
     }
   }
-  stage.classList.toggle('rejected', it.reject);
   stage.classList.toggle('isvideo', isVideo(it));
   const label = it.label ? `<span class="badge label" style="background:${LABELS[it.label] || '#666'}">${esc(labelName(it.label).toUpperCase())}</span>` : '';
   const info = infoCache.get(it.key);
-  const exif = info ? [info.shutter, info.aperture, info.iso, info.focal].filter(Boolean).join(' · ') : '';
+  // Two short lines so the card stays narrow.
+  const exif = info ? [[info.shutter, info.aperture], [info.iso, info.focal]]
+    .map(l => l.filter(Boolean).map(esc).join(' · ')).filter(Boolean).join('<br>') : '';
   const types = [...new Set(it.files.map(f => f.split('.').pop().toUpperCase()))].join('+');
   stage.querySelector('.hud').innerHTML =
-    `<span class="name">${esc(it.name)}</span><span class="types">${esc(types)}</span>${starsHtml(it.rating)}${label}` +
-    (it.reject ? `<span class="badge reject">REJECT</span>` : '') + `<span class="exif">${esc(exif)}</span>`;
+    `<span class="name" title="${esc(it.name)}">${esc(it.name)}</span><span class="types">${esc(types)}</span>${starsHtml(it.rating)}` +
+    (it.reject ? `<span class="badge reject">⚑ REJECTED</span>` : '') + label + `<span class="exif">${exif}</span>`;
   stage.querySelector('.pos').textContent = `${cur + 1} / ${view.length}`;
   if (!info && it.render === 'native') api(`/info/${enc(it.key)}`).then(j => { infoCache.set(it.key, j); if (view[cur] === it) show(); }).catch(() => {});
   for (const d of [1, 2, 3, -1]) preload(cur + d);
+}
+
+// Single view steps over rejected items (unless you're filtering for them);
+// the only way to look at one is to open it from the grid.
+const skips = it => mode === 'single' && it.reject && $('#filter').value !== 'rejected';
+
+// First index from i, moving by step, that isn't skipped (-1 if none).
+function landFrom(i, step) {
+  while (i >= 0 && i < view.length && skips(view[i])) i += step;
+  return i >= 0 && i < view.length ? i : -1;
+}
+
+function jump(i, step) {
+  const j = landFrom(i, step);
+  if (j >= 0 && j !== cur) go(j - cur);
 }
 
 function go(delta) {
@@ -462,7 +484,11 @@ function go(delta) {
   const f = $('#filter').value;
   // Leave items that no longer match the filter behind as we move on.
   const left = view[cur];
-  const next = Math.min(Math.max(cur + delta, 0), view.length - 1);
+  let next = Math.min(Math.max(cur + delta, 0), view.length - 1);
+  if (mode === 'single') {
+    next = landFrom(cur + delta, Math.sign(delta));
+    if (next < 0) return toast(delta > 0 ? 'No more photos after this one' : 'No more photos before this one');
+  }
   if (next === cur) return;
   const target = view[next];
   if (!matches(left, f)) { rebuild(target.key); return; }
@@ -520,10 +546,11 @@ function toggleReject() {
   if (autoAdvance && it.reject) go(1);
 }
 
-function toggleRed() {
+// NX Studio allows one label per photo, so setting one replaces the other.
+function toggleLabel(l) {
   const it = view[cur];
   if (!it) return;
-  change(it, { label: it.label === 'Red' ? null : 'Red' });
+  change(it, { label: it.label === l ? null : l });
 }
 
 async function doUndo() {
@@ -595,11 +622,12 @@ document.addEventListener('keydown', e => {
   else if (inGrid && k === 'ArrowUp') { e.preventDefault(); go(-gridCols()); }
   else if (k === 'ArrowRight' || k === ' ' || k === 'ArrowDown') { e.preventDefault(); go(1); }
   else if (k === 'ArrowLeft' || k === 'Backspace' || k === 'ArrowUp') { e.preventDefault(); go(-1); }
-  else if (k === 'Home') { cur = 0; show(); }
-  else if (k === 'End') { cur = view.length - 1; show(); }
+  else if (k === 'Home') jump(0, 1);
+  else if (k === 'End') jump(view.length - 1, -1);
   else if (/^[0-5]$/.test(k)) rate(+k);
   else if (k === 'x') toggleReject();
-  else if (k === 's' || k === 'r') toggleRed();
+  else if (k === 's' || k === 'r') toggleLabel('Red');
+  else if (k === 'f' && !e.shiftKey) toggleLabel('Blue');
   else if (k === 'z' && !inGrid) toggleZoom();
   else if (k === 'p' && !inGrid) { const v = stage.querySelector('#vid'); if (v && !v.hidden) v.paused ? v.play() : v.pause(); }
   else if (k === 'a') setAuto(!autoAdvance);
@@ -609,7 +637,13 @@ document.addEventListener('keydown', e => {
 });
 
 strip.addEventListener('click', e => { const d = e.target.closest('.th'); if (d) { cur = +d.dataset.i; show(); } });
-grid.addEventListener('click', e => { const d = e.target.closest('.th'); if (d) { cur = +d.dataset.i; setMode('single'); } });
+// First click selects a photo; clicking the selected photo again opens it.
+grid.addEventListener('click', e => {
+  const d = e.target.closest('.th');
+  if (!d) return;
+  if (+d.dataset.i === cur) setMode('single');
+  else { cur = +d.dataset.i; show(); }
+});
 $('#viewBtn').addEventListener('click', e => { e.target.blur(); setMode(mode === 'grid' ? 'single' : 'grid'); });
 $('#stripBtn').addEventListener('click', e => { e.target.blur(); setStrip(!showStrip); });
 function setGridSize(px) {

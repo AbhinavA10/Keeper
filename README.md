@@ -34,7 +34,7 @@ other cameras' raw files and videos all work too.
 ### See the whole shoot at once
 
 Switch to the grid (`G`) to scan a folder at a glance. Stars, social-media
-picks and rejects show on every thumbnail; click any photo to open it full size.
+picks and rejects show on every thumbnail; click a photo to select it and click again to open it full size.
 
 ![Grid view with star ratings, SOCIAL tags and rejected photos crossed out](docs/images/grid.jpg)
 
@@ -144,7 +144,7 @@ Keeper's messages, including the URL to open, until you quit.)
 
 The page itself also accepts a starting state in its URL, handy for bookmarks:
 `?view=grid` or `?view=single`, `&strip=1` (show the filmstrip),
-`&item=DSC_1234` (open that photo), `&filter=unrated` (or `rejected`, `red`,
+`&item=DSC_1234` (open that photo), `&filter=unrated` (or `rejected`, `red`, `blue`,
 `r3` for 3★+ …) and `&help=1` (show the shortcuts).
 
 ## Using it
@@ -153,8 +153,12 @@ There are two views. **Single view** shows one large photo; press **T** or the
 *Filmstrip* button to show a strip of thumbnails underneath, where the current
 photo is lifted and outlined in blue. **Grid view**
 (press **G** or the *Grid* button) fills the window with thumbnails; drag the
-slider in the header to resize them, and click a photo to open it. Rating,
+slider in the header to resize them, click a photo to select it, and click it again (or press Enter) to open it. Rating,
 labelling and rejecting work in both views.
+
+In single view, ← → step over rejected photos so you only see what's left.
+To look at a rejected photo again, open it from the grid (or filter for
+*Rejected*). It shows a yellow **⚑ REJECTED** flag in the info card.
 
 Before culling a folder in Keeper, **close NX Studio** (or refresh its folder
 view afterwards). Otherwise NX Studio can overwrite the new ratings from its cache.
@@ -163,17 +167,19 @@ view afterwards). Otherwise NX Studio can overwrite the new ratings from its cac
 | Key | Action |
 |---|---|
 | G | Switch between grid and single-photo view |
-| Enter / click | Grid: open the selected photo in single view |
+| Click | Grid: select a photo; click it again to open it in single view |
+| Enter | Grid: open the selected photo in single view |
 | Esc | Single view: back to the grid |
 | T | Single view: show / hide the filmstrip |
-| ← → / Space / Backspace | Previous / next (↑ ↓ move by rows in the grid) |
+| ← → / Space / Backspace | Previous / next (↑ ↓ move by rows in the grid). Single view skips rejected photos |
 | X | Toggle reject |
 | 1–5, 0 | Set / clear stars |
-| S (or R) | Toggle social media: shareable, no people (stored as the Red label in NX Studio) |
+| S (or R) | Toggle social media: shareable, no people (stored as the Red label, 1, in NX Studio) |
+| F | Toggle flagged: needs more correction in NX Studio (stored as the Blue label, 5). A photo has one label, so this replaces social media |
 | Z or click | Zoom to 100% |
 | P | Play / pause video |
 | Ctrl+Z | Undo |
-| F | Cycle filter (unrated, rejected, social media, 3★+, photos, videos …) |
+| Shift+F | Cycle filter (unrated, rejected, social media, flagged, 3★+, photos, videos …) |
 | A | Toggle auto-advance to the next photo after rating or rejecting |
 | Home / End | First / last |
 | Del | Review and move rejected items to the Recycle Bin |
