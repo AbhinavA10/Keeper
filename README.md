@@ -57,11 +57,16 @@ Press `?` any time for the full list of shortcuts.
 `Keeper.exe` is a single file with Python and everything else built in.
 Copy it anywhere (Desktop, USB stick, another PC) and:
 
-* **double-click it** and choose a photo folder, or
+* **double-click it**, or
 * **drag a folder onto it**.
 
 A console window opens, scans the folder, and opens Keeper in your default
 browser. Keep the console window open while you work; **close it to quit**.
+
+Use **📁 Open folder…** in the header (or press **O**) to switch folders at any
+time. Keeper remembers the last folder and reopens it next time. If that
+folder is gone (e.g. an unplugged drive), it opens your Pictures folder
+instead and says so.
 
 Requirements on the machine: **Windows 10 or 11** and a modern browser
 (Chrome, Edge or Firefox). Optionally **[ffmpeg](https://ffmpeg.org/download.html)**
@@ -103,7 +108,7 @@ conda env update -f environment.yml --prune
 
 ### Run from source
 
-* **Double-click `Keeper.bat`** and choose a photo folder, or
+* **Double-click `Keeper.bat`** (reopens the last folder), or
 * **drag a folder onto `Keeper.bat`**.
 
 `Keeper.bat` uses the `keeper` conda environment (from Miniconda or
@@ -138,7 +143,7 @@ Keeper's messages, including the URL to open, until you quit.)
 
 | Option | Effect |
 |---|---|
-| *(no folder)* | Opens a folder picker |
+| *(no folder)* | Reopens the last folder used, or your Pictures folder if it's not available |
 | `--port=8765` | Use this port (default 47615, or any free port if that's taken) |
 | `--no-browser` | Don't open the browser automatically (the URL is printed) |
 
@@ -166,6 +171,7 @@ view afterwards). Otherwise NX Studio can overwrite the new ratings from its cac
 
 | Key | Action |
 |---|---|
+| O | Open another folder (remembered for next time) |
 | G | Switch between grid and single-photo view |
 | Click | Grid: select a photo; click it again to open it in single view |
 | Enter | Grid: open the selected photo in single view |
@@ -187,6 +193,15 @@ view afterwards). Otherwise NX Studio can overwrite the new ratings from its cac
 
 The header shows **Saving… / Saved**. Wait for *Saved* before closing the
 browser tab; it warns you if a save is still in progress.
+
+### Fix dates
+
+**🕒 Fix dates…** sets the *Date Modified* of every JPEG in the folder to its
+*Date Taken*, so files sort by when they were shot (handy after exporting from
+NX Studio, which stamps exports with the export time). Date Taken comes from
+the JPEG's EXIF, or from its NEF if the JPEG has none. You see how many will
+change, already match, or have no Date Taken before anything happens. Only the
+file system timestamp changes; the photo's contents are never touched.
 
 ### What counts as one item
 
@@ -228,7 +243,8 @@ HEVC in Chrome) can't play there, but they can still be culled.
 | Ratings don't show in NX Studio | Refresh the folder in NX Studio, or close and reopen it. |
 
 Previews and thumbnails are cached in `%LOCALAPPDATA%\Keeper`. It's safe
-to delete that folder at any time; it is rebuilt as needed.
+to delete that folder at any time; it is rebuilt as needed. The last folder
+used is remembered in `%APPDATA%\Keeper\settings.json`.
 
 ## Project layout
 

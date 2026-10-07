@@ -26,7 +26,8 @@
   header > * { flex-shrink: 0; white-space: nowrap; }
   header .title { font-weight: 600; letter-spacing: .2px; }
   /* The folder path gives up space first so the controls never wrap. */
-  header .folder { color: var(--dim); overflow: hidden; text-overflow: ellipsis; flex: 1 1 0; min-width: 40px; }
+  header .folder { color: var(--dim); overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 40px; }
+  #openBtn { margin-right: auto; padding: 3px 9px; }  /* sits by the folder name; the stats go right */
   header .folder::before { content: "›"; margin-right: 8px; color: #4b5563; }
   header .spacer { display: none; }
   @media (max-width: 1250px) { header .stat.opt { display: none; } }
@@ -65,7 +66,7 @@
   .badge.label { color: white; }
   .pos { position: absolute; right: 14px; bottom: 12px; color: var(--dim); background: rgba(14,15,17,.72); padding: 5px 10px; border-radius: 8px; pointer-events: none; }
   #stage.isvideo .pos { bottom: auto; top: 12px; }
-  .empty { color: var(--dim); font-size: 15px; }
+  .empty { color: var(--dim); font-size: 15px; text-align: center; line-height: 1.8; }
 
   #strip { background: var(--panel); border-top: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; white-space: nowrap; padding: 14px 12px 8px; scrollbar-width: thin; scrollbar-color: #3a3f45 transparent; }
   .th { display: inline-block; position: relative; width: 132px; height: 92px; margin-right: 8px; border-radius: 6px; overflow: hidden;
@@ -131,6 +132,7 @@
   <header>
     <span class="title">Keeper</span>
     <span class="folder" id="folder"></span>
+    <button id="openBtn" title="Open another folder (O)">📁 Open folder…</button>
     <span class="spacer"></span>
     <span class="stat saving" id="saving">Saved</span>
     <span class="stat opt"><b id="sTotal">0</b> items</span>
@@ -157,6 +159,7 @@
     <button id="viewBtn" title="Switch between grid and single-photo view (G)">▦ Grid</button>
     <button id="stripBtn" class="toggle singleonly" title="Show thumbnails under the photo (T)">Filmstrip</button>
     <button id="auto" class="toggle on" title="Advance to next item after rating/rejecting (A)">Auto-advance</button>
+    <button id="datesBtn" title="Set each JPEG's Date Modified to its Date Taken">🕒 Fix dates…</button>
     <button id="help" title="Keyboard shortcuts (?)">?</button>
     <button id="del" class="danger" disabled>Delete rejected…</button>
   </header>
@@ -175,10 +178,20 @@
   </div>
 </div>
 
+<div class="modal" id="datesModal">
+  <div class="card">
+    <h2 id="datesTitle">Fix dates</h2>
+    <div>Sets each JPEG's <b>Date Modified</b> to its <b>Date Taken</b> (from the photo's EXIF, or its NEF if the JPEG has none). Only the file's timestamp changes; the photo itself isn't touched.</div>
+    <div class="list" id="datesList"></div>
+    <div class="row"><button id="datesCancel">Cancel</button><button id="datesGo">Set dates</button></div>
+  </div>
+</div>
+
 <div class="modal" id="helpModal">
   <div class="card">
     <h2>Keyboard shortcuts</h2>
     <div class="keys">
+      <kbd>O</kbd><span>Open another folder (Keeper reopens the last one next time)</span>
       <kbd>G</kbd><span>Switch between grid and single-photo view</span>
       <kbd>Enter</kbd><span>Grid: open the selected photo (or click it again; the first click selects it)</span>
       <kbd>Esc</kbd><span>Single view: back to the grid</span>
@@ -256,9 +269,24 @@ function setPending(d) {
 }
 window.addEventListener('beforeunload', e => { if (pending) { e.preventDefault(); e.returnValue = ''; } });
 
-function toast(msg, err) {
+function toast(msg, err, ms) {
   const t = $('#toast'); t.textContent = msg; t.className = 'show' + (err ? ' err' : '');
-  clearTimeout(toast.h); toast.h = setTimeout(() => t.className = '', err ? 4000 : 1400);
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.className = '', ms || (err ? 4000 : 1400));
+}
+
+// The server shows Windows' folder picker; on a new folder, reload the page
+// (view, filter and sizes are kept; they live in localStorage).
+async function openFolder() {
+  if (pending) return toast('Wait for Saved before switching folders', true);
+  const b = $('#openBtn');
+  b.disabled = true;
+  toast('Choose a folder in the window that opened…', false, 60000);
+  try {
+    const j = await api('/api/open-folder', {}, { tries: 1, timeout: 0 });  // waits for you to pick
+    if (j.changed) { location.href = location.pathname; return; }
+    toast('Folder unchanged');
+  } catch (e) { toast(`Couldn't open folder: ${e.message}`, true); }
+  b.disabled = false;
 }
 
 function matches(it, f) {
@@ -286,11 +314,14 @@ function rebuild(keepKey) {
     view.forEach((it, i) => frag.appendChild(makeThumb(it, i)));
     box.appendChild(frag);
   }
-  if (!view.length) grid.innerHTML = `<div class="empty">Nothing matches this filter.</div>`;
+  if (!view.length) grid.innerHTML = `<div class="empty">${emptyText()}</div>`;
   view.forEach((_, i) => paintThumb(i));
   stats();
   show();
 }
+
+const emptyText = () => items.length ? 'Nothing matches this filter.'
+  : 'No photos or videos in this folder.<br>Use <b>📁 Open folder…</b> (or press <kbd>O</kbd>) to choose another.';
 
 function makeThumb(it, i) {
   const d = document.createElement('div');
@@ -417,7 +448,7 @@ const infoCache = new Map();
 async function show() {
   if (!view.length) {
     stage.className = ''; zoomed = false;
-    stage.innerHTML = `<div class="empty">Nothing matches this filter.</div>`;
+    stage.innerHTML = `<div class="empty">${emptyText()}</div>`;
     return;
   }
   cur = Math.min(Math.max(cur, 0), view.length - 1);
@@ -597,6 +628,36 @@ async function doDelete() {
   $('#delModal').classList.remove('show');
 }
 
+// Dry run first, so you see what will change before anything does.
+async function openDates() {
+  const b = $('#datesBtn'); b.disabled = true;
+  try {
+    const j = await api('/api/fix-dates', { apply: false }, { tries: 1, timeout: 0 });
+    const n = j.change.length;
+    $('#datesTitle').textContent = n ? `Set Date Modified on ${n} JPEG${n > 1 ? 's' : ''}?` : 'All JPEG dates already match';
+    const lines = [`${j.same} already match`];
+    if (j.missing.length) lines.push(`${j.missing.length} have no Date Taken and are left alone: ${j.missing.map(esc).join(', ')}`);
+    if (j.failed.length) lines.push(`${j.failed.length} couldn't be read: ${j.failed.map(esc).join(', ')}`);
+    if (n) lines.push(`To change: ${j.change.map(esc).join(', ')}`);
+    $('#datesList').innerHTML = lines.join('<br><br>');
+    $('#datesGo').hidden = !n;
+    $('#datesModal').classList.add('show');
+    if (n) $('#datesGo').focus();
+  } catch (e) { toast(`Couldn't check dates: ${e.message}`, true); }
+  b.disabled = false;
+}
+
+async function doDates() {
+  $('#datesGo').disabled = true;
+  try {
+    const j = await api('/api/fix-dates', { apply: true }, { tries: 1, timeout: 0 });
+    toast(j.failed.length ? `Set ${j.change.length} dates; ${j.failed.length} failed (read-only or in use?)`
+                          : `Set Date Modified on ${j.change.length} JPEG${j.change.length === 1 ? '' : 's'}`, !!j.failed.length);
+  } catch (e) { toast(`Couldn't set dates: ${e.message}`, true); }
+  $('#datesGo').disabled = false;
+  $('#datesModal').classList.remove('show');
+}
+
 function setAuto(v) {
   autoAdvance = v; $('#auto').classList.toggle('on', v);
   try { localStorage.setItem('pc.auto', v ? '1' : '0'); } catch {}
@@ -607,6 +668,7 @@ document.addEventListener('keydown', e => {
   if (modal) {
     if (e.key === 'Escape') modal.classList.remove('show');
     if (e.key === 'Enter' && modal.id === 'delModal') { e.preventDefault(); doDelete(); }
+    if (e.key === 'Enter' && modal.id === 'datesModal') { e.preventDefault(); if (!$('#datesGo').hidden) doDates(); else modal.classList.remove('show'); }
     return;
   }
   if ((e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') && e.key.startsWith('Arrow')) return;
@@ -614,7 +676,8 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.altKey || e.metaKey) return;
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   const inGrid = mode === 'grid';
-  if (k === 'g') setMode(inGrid ? 'single' : 'grid');
+  if (k === 'o') openFolder();
+  else if (k === 'g') setMode(inGrid ? 'single' : 'grid');
   else if (k === 't' && !inGrid) setStrip(!showStrip);
   else if (k === 'Enter' && inGrid) { e.preventDefault(); if (view.length) setMode('single'); }
   else if (k === 'Escape' && !inGrid) { if (zoomed) toggleZoom(); else setMode('grid'); }
@@ -644,6 +707,7 @@ grid.addEventListener('click', e => {
   if (+d.dataset.i === cur) setMode('single');
   else { cur = +d.dataset.i; show(); }
 });
+$('#openBtn').addEventListener('click', e => { e.target.blur(); openFolder(); });
 $('#viewBtn').addEventListener('click', e => { e.target.blur(); setMode(mode === 'grid' ? 'single' : 'grid'); });
 $('#stripBtn').addEventListener('click', e => { e.target.blur(); setStrip(!showStrip); });
 function setGridSize(px) {
@@ -660,6 +724,9 @@ $('#helpClose').addEventListener('click', () => $('#helpModal').classList.remove
 $('#del').addEventListener('click', e => { e.target.blur(); openDelete(); });
 $('#delCancel').addEventListener('click', () => $('#delModal').classList.remove('show'));
 $('#delGo').addEventListener('click', doDelete);
+$('#datesBtn').addEventListener('click', e => { e.target.blur(); openDates(); });
+$('#datesCancel').addEventListener('click', () => $('#datesModal').classList.remove('show'));
+$('#datesGo').addEventListener('click', doDates);
 
 (async () => {
   setAuto(autoAdvance);
@@ -686,6 +753,7 @@ $('#delGo').addEventListener('click', doDelete);
     const wanted = (q.get('item') || '').toLowerCase();
     rebuild(items.find(it => it.key === wanted)?.key || items.find(it => !it.rating && !it.reject)?.key);
     if (q.get('help') === '1') $('#helpModal').classList.add('show');
+    if (j.notice) toast(j.notice, true, 9000);
   } catch (e) { stage.innerHTML = `<div class="empty">Couldn't load folder: ${esc(e.message)}</div>`; }
 })();
 </script>

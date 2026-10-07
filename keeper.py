@@ -1,7 +1,8 @@
 """Keeper - fast rating, labelling and culling of photo folders.
 
 Usage:  python keeper.py [folder]
-Opens a browser UI.
+Opens a browser UI. Without a folder it reopens the last one used (or the
+Pictures folder); the page's Open folder button switches to another.
 
 Files sharing a base name are one item (NEF+JPG, HEIC+MOV Live Photo, ...).
 Nikon items keep ratings and labels where NX Studio reads them (see
@@ -16,7 +17,9 @@ import re
 import socket
 import sys
 import threading
+import time
 import webbrowser
+import zlib
 from ctypes import wintypes
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote
@@ -31,6 +34,9 @@ import xmp_rating as X
 HERE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
 STATE_FILE = ".keeper.json"
 LEGACY_STATE_FILE = ".photocull.json"  # written by the app before it was renamed
+# Remembers the last folder. Kept apart from the thumbnail cache in
+# %LOCALAPPDATA%\Keeper, which the README says can be deleted at any time.
+SETTINGS_FILE = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "Keeper", "settings.json")
 NIKON_RAW = {".nef", ".nrw"}
 NIKON_NAME = re.compile(r"^(DSC_|_DSC|DSCN)\d", re.I)
 
@@ -165,6 +171,43 @@ class Catalogue:
             (self.rejects.add if reject else self.rejects.discard)(key)
             self._save_state()
 
+    def fix_dates(self, apply=False):
+        """Set each JPEG's Date Modified to its EXIF Date Taken.
+
+        Only the file system timestamp changes; the file's contents are never
+        touched. Date Taken has no time zone, so it's read as this PC's local
+        time, which is how Windows shows it. A JPEG without one borrows it from
+        its raw file (an NX Studio export of DSC_1234.NEF, say), if any.
+        Returns {"change": [...], "same": n, "missing": [...], "failed": [...]}.
+        """
+        out = {"change": [], "same": 0, "missing": [], "failed": []}
+        with self.lock:
+            items = [self.items[k] for k in self.order]
+        for item in items:
+            jpegs = [n for n in item["files"] if M.ext(n) in (".jpg", ".jpeg")]
+            if not jpegs:
+                continue
+            raws = [n for n in item["files"] if M.ext(n) in M.RAW]
+            for name in jpegs:
+                path = os.path.join(self.folder, name)
+                taken = date_taken(path)
+                for raw in raws:
+                    taken = taken or date_taken(os.path.join(self.folder, raw))
+                if taken is None:
+                    out["missing"].append(name)
+                    continue
+                try:
+                    st = os.stat(path)
+                    if abs(st.st_mtime - taken) < 1:
+                        out["same"] += 1
+                        continue
+                    if apply:
+                        os.utime(path, (st.st_atime, taken))  # keep the access time
+                    out["change"].append(name)
+                except OSError:
+                    out["failed"].append(name)
+        return out
+
     def files_to_delete(self, key):
         item = self.items[key]
         paths = [os.path.join(self.folder, n) for n in item["files"]]
@@ -244,11 +287,54 @@ def exif_info(path):
     return out
 
 
+def _raw_exif_dates(path):
+    """{tag: value} of the Exif date tags in a TIFF-based raw (NEF, DNG, ARW...),
+    which Pillow can't read. Only the first 256 KB is read."""
+    with open(path, "rb") as f:
+        d = f.read(1 << 18)
+    bo = {b"II": "little", b"MM": "big"}.get(d[:2])
+    if not bo:
+        return {}
+    u = lambda o, n: int.from_bytes(d[o:o + n], bo)
+
+    def entries(off):
+        for i in range(u(off, 2) if off + 2 <= len(d) else 0):
+            e = off + 2 + 12 * i
+            if e + 12 <= len(d):
+                yield u(e, 2), u(e + 2, 2), u(e + 4, 4), e + 8  # tag, type, count, value at
+    exif = next((u(v, 4) for t, _, _, v in entries(u(4, 4)) if t == 0x8769), 0)
+    out = {}
+    for t, typ, n, v in entries(exif) if exif else ():
+        if t in (0x9003, 0x9004) and typ == 2:  # ASCII
+            at = v if n <= 4 else u(v, 4)
+            out[t] = d[at:at + n].decode("ascii", "replace")
+    return out
+
+
+def date_taken(path):
+    """EXIF Date Taken (DateTimeOriginal, else DateTimeDigitized) as a local
+    timestamp, or None. Only the file's header is read."""
+    try:
+        if M.ext(path) in M.RAW:
+            sub = _raw_exif_dates(path)
+        else:
+            with Image.open(path) as im:
+                sub = im.getexif().get_ifd(0x8769)
+        for tag in (0x9003, 0x9004):  # DateTimeOriginal, DateTimeDigitized
+            v = str(sub.get(tag) or "").strip("\0 ")
+            if v and not v.startswith("0000"):
+                return time.mktime(time.strptime(v[:19], "%Y:%m:%d %H:%M:%S"))
+    except Exception:
+        pass
+    return None
+
+
 # ---------------------------------------------------------------- http
 
 class Handler(BaseHTTPRequestHandler):
-    cat: Catalogue = None
+    cat: Catalogue = None  # replaced when another folder is opened
     media_url = ""
+    notice = ""  # shown once by the page, e.g. "last folder isn't available"
     # Keep-alive: the browser closes connections, not us. On some PCs (seen
     # with antivirus network filtering) a connection the server closes first
     # loses the tail of a large response, so photos arrived truncated. Every
@@ -314,8 +400,14 @@ class Handler(BaseHTTPRequestHandler):
                 with open(os.path.join(HERE, "keeper.html"), "rb") as f:
                     return self._send(200, f.read(), "text/html; charset=utf-8")
             if path == "/api/list":
-                return self._send(200, {"folder": self.cat.folder, "media": self.media_url,
-                                        "heif": M.HAVE_HEIF, "items": self.cat.listing()})
+                cat = self.cat
+                # Media URLs carry a per-folder prefix so the browser's cached
+                # /thumb/dsc_1234 from one folder isn't reused for another.
+                media = f"{self.media_url}/f{zlib.crc32(cat.folder.lower().encode()):08x}"
+                notice, Handler.notice = Handler.notice, ""
+                return self._send(200, {"folder": cat.folder, "media": media, "notice": notice,
+                                        "heif": M.HAVE_HEIF, "items": cat.listing()})
+            path = re.sub(r"^/f[0-9a-f]{8}(?=/)", "", path)
             kind, _, key = path.lstrip("/").partition("/")
             if kind in ("img", "thumb", "info", "video"):
                 item = self.cat.items[unquote(key)]
@@ -356,6 +448,19 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/delete-rejects":
                 deleted, failed = self.cat.delete_rejects()
                 return self._send(200, {"deleted": deleted, "failed": failed})
+            if self.path == "/api/fix-dates":
+                return self._send(200, self.cat.fix_dates(apply=bool(data.get("apply"))))
+            if self.path == "/api/open-folder":
+                if not PICKING.acquire(blocking=False):
+                    return self._send(409, {"error": "The folder picker is already open"})
+                try:
+                    folder = pick_folder(self.cat.folder)
+                finally:
+                    PICKING.release()
+                if not folder:
+                    return self._send(200, {"changed": False})
+                open_folder(folder)
+                return self._send(200, {"changed": True, "folder": self.cat.folder})
             self._send(404, {"error": "not found"})
         except Exception as e:
             self._send(500, {"error": f"{type(e).__name__}: {e}"})
@@ -393,25 +498,86 @@ def start_main_server(port):
         return ExclusiveServer(("127.0.0.1", 0), Handler)
 
 
-def pick_folder():
+PICKING = threading.Lock()  # one folder picker at a time
+
+
+def pick_folder(start=None):
+    """Windows folder picker; returns "" if cancelled. Safe to call from a
+    request thread: the Tk root is created and destroyed on that thread."""
     import tkinter as tk
     from tkinter import filedialog
     root = tk.Tk()
     root.withdraw()
-    root.attributes("-topmost", True)
-    folder = filedialog.askdirectory(title="Choose a folder of photos")
+    root.attributes("-topmost", True)  # in front of the browser
+    folder = filedialog.askdirectory(parent=root, title="Choose a folder of photos",
+                                     initialdir=start or None, mustexist=True)
     root.destroy()
-    return folder
+    return os.path.normpath(folder) if folder else ""
+
+
+def load_settings():
+    try:
+        with open(SETTINGS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_settings(**changes):
+    s = {**load_settings(), **changes}
+    try:
+        os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
+        tmp = SETTINGS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(s, f, indent=1)
+        os.replace(tmp, SETTINGS_FILE)
+    except OSError as e:
+        print(f"Couldn't save settings: {e}")
+
+
+def default_folder():
+    """The user's Pictures folder (wherever Windows has it, e.g. OneDrive)."""
+    buf = ctypes.create_unicode_buffer(260)
+    if ctypes.windll.shell32.SHGetFolderPathW(None, 0x27, None, 0, buf) == 0 and os.path.isdir(buf.value):  # CSIDL_MYPICTURES
+        return buf.value
+    return os.path.expanduser("~")
+
+
+def open_folder(folder):
+    """Scan folder, serve it from now on, and remember it for next time."""
+    folder = os.path.abspath(folder)
+    print(f"Scanning {folder} ...")
+    Handler.cat = Catalogue(folder)
+    Handler.notice = ""
+    save_settings(last_folder=folder)
+    items = Handler.cat.items.values()
+    nikon = sum(i["nikon"] for i in items)
+    print(f"{len(items)} items ({nikon} Nikon, {len(items) - nikon} other).")
+    if not M.HAVE_HEIF and any(i["render"] == "heif" for i in items):
+        print("Note: HEIC photos can be culled but not previewed until pillow-heif is installed.")
+
+
+def startup_folder(args):
+    """Folder from the command line, else the last one used, else Pictures.
+    Returns (folder, notice to show in the page)."""
+    if args:
+        if os.path.isdir(args[0]):
+            return args[0], ""
+        sys.exit(f"Folder not found: {args[0]}")
+    last = load_settings().get("last_folder")
+    if last and os.path.isdir(last):
+        return last, ""
+    pictures = default_folder()
+    if last:
+        return pictures, f"The last folder ({last}) isn't available, so Keeper opened {pictures}. Use Open folder to pick another."
+    return pictures, "Use Open folder to pick a folder of photos."
 
 
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    folder = args[0] if args else pick_folder()
-    if not folder or not os.path.isdir(folder):
-        sys.exit("No folder chosen.")
-    folder = os.path.abspath(folder)
-    print(f"Scanning {folder} ...")
-    Handler.cat = Catalogue(folder)
+    folder, notice = startup_folder(args)
+    open_folder(folder)
+    Handler.notice = notice
     port = next((int(a.split("=", 1)[1]) for a in sys.argv if a.startswith("--port=")), None)
     server = start_main_server(port)
     # Photos are served from a second port: browsers allow only ~6 connections
@@ -420,11 +586,7 @@ def main():
     Handler.media_url = f"http://127.0.0.1:{media.server_port}"
     threading.Thread(target=media.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{server.server_port}/"
-    items = Handler.cat.items.values()
-    nikon = sum(i["nikon"] for i in items)
-    print(f"{len(items)} items ({nikon} Nikon, {len(items) - nikon} other). Keeper running at {url}")
-    if not M.HAVE_HEIF and any(i["render"] == "heif" for i in items):
-        print("Note: HEIC photos can be culled but not previewed until pillow-heif is installed.")
+    print(f"Keeper running at {url}")
     print("Close this window to quit.")
     if "--no-browser" not in sys.argv:
         webbrowser.open(url)
