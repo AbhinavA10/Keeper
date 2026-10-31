@@ -56,7 +56,7 @@ Press `?` any time for the full list of shortcuts.
 
 `Keeper.exe` is a single file with Python and everything else built in.
 Download it from the repo's
-**[Releases page](https://github.com/AbhinavA10/nx-sorting/releases/latest)**
+**[Releases page](https://github.com/AbhinavA10/Keeper/releases/latest)**
 (under *Assets*), copy it anywhere (Desktop, USB stick, another PC) and:
 
 * **double-click it**, or
@@ -86,13 +86,13 @@ create the `keeper` conda environment from `environment.yml` (Python,
 Pillow, pillow-heif for iPhone HEIC photos, and PyInstaller for building the exe):
 
 ```bash
-git clone https://github.com/AbhinavA10/nx-sorting.git
+git clone https://github.com/AbhinavA10/Keeper.git
 ```
 
-(or `git clone git@github.com:AbhinavA10/nx-sorting.git` if you use SSH keys with GitHub)
+(or `git clone git@github.com:AbhinavA10/Keeper.git` if you use SSH keys with GitHub)
 
 ```bash
-cd nx-sorting
+cd Keeper
 ```
 
 ```bash
