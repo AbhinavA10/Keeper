@@ -127,6 +127,20 @@ The result is `dist\Keeper.exe` (about 20 MB), built from `keeper.spec`
 with the icon in `assets\`. Rebuild it after changing any `.py` or `.html` file.
 `dist\` and `build\` are ignored by git.
 
+### Run the tests
+
+```bash
+conda run --no-capture-output -n keeper python -m unittest discover -s tests
+```
+
+They take a few seconds and use small fake photos made on the fly, in
+temporary folders. They check what matters most: NX Studio sidecars get the
+right rating and label while everything else in them (NX Studio's edits
+included) stays byte for byte the same, and **no test operation ever
+changes a photo or video file**. They also cover grouping, `.keeper.json`,
+Fix dates, the remembered folder and the web API. Run them before publishing
+a release.
+
 ### Publish a release
 
 The exe isn't committed: each 20 MB build would stay in the repo's history
@@ -274,3 +288,4 @@ used is remembered in `%APPDATA%\Keeper\settings.json`.
 | `environment.yml` | Conda environment (runtime + build tools) |
 | `keeper.spec`, `assets\keeper.ico` | PyInstaller build of `Keeper.exe` and its icon |
 | `release.py` | Builds `Keeper.exe` and publishes it as a GitHub release |
+| `tests\` | Automated tests (`unittest`, no extra packages) |
