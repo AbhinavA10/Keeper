@@ -328,12 +328,14 @@ def sidecars_for(folder, names):
     return [p for p in (sidecar_path(folder, n) for n in names) if os.path.exists(p)]
 
 
-def read_pair(folder, names):
-    """Rating/label for a set of files that NX Studio shows as one item."""
+def read_pair(folder, names, camera=True):
+    """Rating/label for a set of files that NX Studio shows as one item.
+    camera=False skips the slow fallback of reading ratings set in-camera
+    from the photos themselves."""
     for sc in sidecars_for(folder, names):
         r, l = read_sidecar(sc)
         return (r or 0), l
-    for n in names:
+    for n in names if camera else ():
         r, l = read_file(os.path.join(folder, n))
         if r is not None:
             return max(r, 0), l

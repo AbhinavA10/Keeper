@@ -22,7 +22,7 @@ import webbrowser
 import zlib
 from ctypes import wintypes
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import unquote
+from urllib.parse import parse_qs, unquote
 
 from PIL import Image, ExifTags
 
@@ -56,8 +56,12 @@ def _is_nikon_jpeg(path):
 
 
 class Catalogue:
-    def __init__(self, folder):
+    def __init__(self, folder, quick=False):
+        # quick: for sidebar counts. Reads only Keeper's and NX Studio's own
+        # files, never the photos (in-camera ratings), which on a big folder
+        # is the difference between half a second and half a minute.
         self.folder = folder
+        self.quick = quick
         self.lock = threading.Lock()
         self.items = {}   # key -> dict
         self.order = []
@@ -106,11 +110,12 @@ class Catalogue:
             nikon = bool(images) and (
                 any(M.ext(n) in NIKON_RAW for n in images)
                 or (has_nksc and bool(X.sidecars_for(self.folder, images)))
-                or bool(NIKON_NAME.match(display) and _is_nikon_jpeg(os.path.join(self.folder, display))))
+                or bool(not self.quick and NIKON_NAME.match(display)
+                        and _is_nikon_jpeg(os.path.join(self.folder, display))))
             rating, label = 0, None
             if nikon:
                 try:
-                    rating, label = X.read_pair(self.folder, images)
+                    rating, label = X.read_pair(self.folder, images, camera=not self.quick)
                 except Exception:
                     pass
             else:
@@ -395,11 +400,20 @@ class Handler(BaseHTTPRequestHandler):
                 left -= len(chunk)
 
     def do_GET(self):
-        path = self.path.split("?")[0]
+        path, _, query = self.path.partition("?")
+        arg = parse_qs(query).get("path", [""])[0]
         try:
             if path == "/":
                 with open(os.path.join(HERE, "keeper.html"), "rb") as f:
                     return self._send(200, f.read(), "text/html; charset=utf-8")
+            if path == "/api/folders":  # ?path=; default: the open folder's parent
+                return self._send(200, folder_tree(arg or os.path.dirname(self.cat.folder)))
+            if path == "/api/folder-stats":
+                if not os.path.isdir(arg):
+                    return self._send(404, {"error": "no such folder"})
+                return self._send(200, folder_stats(arg))
+            if path == "/api/recent":
+                return self._send(200, recent_folders())
             if path == "/api/list":
                 cat = self.cat
                 # Media URLs carry a per-folder prefix so the browser's cached
@@ -451,6 +465,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"deleted": deleted, "failed": failed})
             if self.path == "/api/fix-dates":
                 return self._send(200, self.cat.fix_dates(apply=bool(data.get("apply"))))
+            if self.path == "/api/open":  # a folder picked in the sidebar
+                if not os.path.isdir(data.get("path") or ""):
+                    return self._send(404, {"error": "That folder isn't available"})
+                open_folder(data["path"])
+                return self._send(200, {"changed": True, "folder": self.cat.folder})
             if self.path == "/api/open-folder":
                 if not PICKING.acquire(blocking=False):
                     return self._send(409, {"error": "The folder picker is already open"})
@@ -544,18 +563,94 @@ def default_folder():
     return os.path.expanduser("~")
 
 
+RECENT_MAX = 10
+
+
 def open_folder(folder):
     """Scan folder, serve it from now on, and remember it for next time."""
     folder = os.path.abspath(folder)
     print(f"Scanning {folder} ...")
     Handler.cat = Catalogue(folder)
     Handler.notice = ""
-    save_settings(last_folder=folder)
+    recent = [f for f in load_settings().get("recent", []) if f.lower() != folder.lower()]
+    save_settings(last_folder=folder, recent=[folder, *recent][:RECENT_MAX])
+    _STATS.pop(folder.lower(), None)  # it's about to change; counted live while open
     items = Handler.cat.items.values()
     nikon = sum(i["nikon"] for i in items)
     print(f"{len(items)} items ({nikon} Nikon, {len(items) - nikon} other).")
     if not M.HAVE_HEIF and any(i["render"] == "heif" for i in items):
         print("Note: HEIC photos can be culled but not previewed until pillow-heif is installed.")
+
+
+# ---------------------------------------------------------------- folder sidebar
+
+_SKIP_DIRS = {X.SIDECAR_DIR.lower(), "$recycle.bin", "system volume information"}
+_STATS = {}  # folder.lower() -> (signature, stats); for folders other than the open one
+
+
+def subfolders(folder):
+    """[(name, path)] of folder's visible subfolders, in natural order."""
+    out = []
+    try:
+        with os.scandir(folder) as it:
+            for e in it:
+                if (e.name.startswith((".", "$")) or e.name.lower() in _SKIP_DIRS
+                        or not e.is_dir(follow_symlinks=False)):
+                    continue
+                try:
+                    if e.stat().st_file_attributes & 0x6:  # hidden or system
+                        continue
+                except (OSError, AttributeError):
+                    pass
+                out.append((e.name, e.path))
+    except OSError:
+        pass
+    return sorted(out, key=lambda t: M.natural_key(t[0]))
+
+
+def folder_tree(folder):
+    """One level of the sidebar tree: folder's subfolders, and its parent."""
+    folder = os.path.abspath(folder)
+    parent = os.path.dirname(folder)
+    return {"path": folder, "name": os.path.basename(folder) or folder,
+            "parent": parent if parent != folder else None,
+            "children": [{"name": n, "path": p, "has_children": bool(subfolders(p))}
+                         for n, p in subfolders(folder)]}
+
+
+def counts(items):
+    """Sidebar numbers: everything, still to sort (no stars, label or
+    reject), and rejected."""
+    return {"items": len(items),
+            "todo": sum(1 for i in items if not (i["rating"] or i["label"] or i["reject"])),
+            "rejected": sum(1 for i in items if i["reject"])}
+
+
+def folder_stats(folder):
+    """counts() for any folder. The open folder is counted live; others are
+    scanned (read-only) and cached until their files or decisions change."""
+    folder = os.path.abspath(folder)
+    cat = Handler.cat
+    if cat and cat.folder.lower() == folder.lower():
+        return counts(cat.listing())
+    sig = []
+    for p in (folder, os.path.join(folder, X.SIDECAR_DIR), os.path.join(folder, STATE_FILE)):
+        try:
+            sig.append(os.stat(p).st_mtime_ns)
+        except OSError:
+            sig.append(None)
+    hit = _STATS.get(folder.lower())
+    if hit and hit[0] == sig:
+        return hit[1]
+    stats = counts(Catalogue(folder, quick=True).listing())
+    _STATS[folder.lower()] = (sig, stats)
+    return stats
+
+
+def recent_folders():
+    current = Handler.cat.folder.lower() if Handler.cat else ""
+    return [{"path": f, "name": os.path.basename(f) or f, "exists": os.path.isdir(f)}
+            for f in load_settings().get("recent", []) if f.lower() != current]
 
 
 def startup_folder(args):

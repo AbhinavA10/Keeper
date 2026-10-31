@@ -21,7 +21,30 @@
   #app.nostrip { grid-template-rows: 44px 1fr; }
   #app.nostrip #strip { display: none; }
 
-  #app { grid-template-columns: minmax(0, 1fr); }
+  /* Column 1 is the folder sidebar (B), zero-width while it's hidden. */
+  #app { grid-template-columns: var(--sidew, 0px) minmax(0, 1fr); }
+  #app.side { --sidew: 270px; }
+  header { grid-column: 1 / -1; }
+  #stage, #gridWrap { grid-column: 2; grid-row: 2; }
+  #strip { grid-column: 2; grid-row: 3; }
+  #side { grid-column: 1; grid-row: 2 / -1; display: none; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--line);
+    padding: 10px 0 20px; scrollbar-width: thin; scrollbar-color: #3a3f45 transparent; }
+  #app.side #side { display: block; }
+  #side h3 { margin: 10px 14px 6px; font-size: 11px; font-weight: 700; letter-spacing: .8px; color: var(--dim); text-transform: uppercase;
+    display: flex; align-items: center; gap: 6px; }
+  #side h3 button { padding: 0 7px; font-size: 12px; text-transform: none; letter-spacing: 0; }
+  #side h3 .root { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: 0; font-size: 12px; color: var(--text); font-weight: 600; }
+  .node { display: flex; align-items: center; gap: 4px; padding: 3px 10px 3px calc(8px + var(--d, 0) * 14px); cursor: pointer; white-space: nowrap; }
+  .node:hover { background: var(--panel2); }
+  .node.cur { background: rgba(59,130,246,.18); box-shadow: inset 3px 0 0 var(--sel); }
+  .node.gone { opacity: .45; cursor: default; }
+  .node .tw { width: 14px; flex: none; text-align: center; color: var(--dim); font-size: 10px; }
+  .node .tw:empty { visibility: hidden; }
+  .node .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .node .cnt { flex: none; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .node .cnt.todo { color: var(--accent); }
+  .node .cnt.done { color: var(--ok); }
+  .kids:empty { display: none; }
   header { display: flex; align-items: center; gap: 12px; padding: 0 14px; background: var(--panel); border-bottom: 1px solid var(--line); min-width: 0; }
   header > * { flex-shrink: 0; white-space: nowrap; }
   header .title { font-weight: 600; letter-spacing: .2px; }
@@ -130,6 +153,7 @@
 <body>
 <div id="app" class="nostrip">
   <header>
+    <button id="sideBtn" class="toggle" title="Show folders (B)">☰</button>
     <span class="title">Keeper</span>
     <span class="folder" id="folder"></span>
     <button id="openBtn" title="Open another folder (O)">📁 Open folder…</button>
@@ -163,6 +187,11 @@
     <button id="help" title="Keyboard shortcuts (?)">?</button>
     <button id="del" class="danger" disabled>Delete rejected…</button>
   </header>
+  <nav id="side">
+    <div id="recentBox"><h3>Recent</h3><div id="recent"></div></div>
+    <h3><button id="upBtn" title="Show the folder above">↑</button><span class="root" id="treeRoot"></span></h3>
+    <div id="tree"></div>
+  </nav>
   <div id="stage"><div class="empty">Loading…</div></div>
   <div id="strip"></div>
   <div id="gridWrap"><div id="grid"></div></div>
@@ -192,6 +221,7 @@
     <h2>Keyboard shortcuts</h2>
     <div class="keys">
       <kbd>O</kbd><span>Open another folder (Keeper reopens the last one next time)</span>
+      <kbd>B</kbd><span>Show / hide the folder sidebar: nearby and recent folders, with how many photos each still has to sort</span>
       <kbd>G</kbd><span>Switch between grid and single-photo view</span>
       <kbd>Enter</kbd><span>Grid: open the selected photo (or click it again; the first click selects it)</span>
       <kbd>Esc</kbd><span>Single view: back to the grid</span>
@@ -403,6 +433,8 @@ function stats() {
   const n = items.filter(it => it.reject).length;
   $('#sRej').textContent = n;
   $('#del').disabled = !n;
+  const curNode = document.querySelector('#side .node.cur .cnt');
+  if (curNode) paintCount(curNode, liveCounts());
   $('#del').textContent = n ? `Delete ${n} rejected…` : 'Delete rejected…';
 }
 
@@ -658,6 +690,110 @@ async function doDates() {
   $('#datesModal').classList.remove('show');
 }
 
+// ---- folder sidebar: nearby folders (the open folder's parent) and recent
+// ones, each with how many photos it still has to sort.
+let FOLDER = '', sideOpen = false, sideLoaded = false, treeParent = null, statGen = 0;
+const statQueue = [];
+let statBusy = 0;
+
+function setSide(v) {
+  sideOpen = v;
+  $('#app').classList.toggle('side', v);
+  $('#sideBtn').classList.toggle('on', v);
+  try { localStorage.setItem('pc.side', v ? '1' : '0'); } catch {}
+  if (v && !sideLoaded && FOLDER) loadSide();
+}
+
+const isCur = p => p.toLowerCase() === FOLDER.toLowerCase();
+
+function branch(f, depth) {
+  const b = document.createElement('div');
+  b.innerHTML = `<div class="node" style="--d:${depth}" title="${esc(f.path)}"><span class="tw">${f.has_children ? '▸' : ''}</span>` +
+                `<span class="nm">${esc(f.name)}</span><span class="cnt"></span></div><div class="kids"></div>`;
+  const n = b.firstChild;
+  n.dataset.path = f.path;
+  n.dataset.depth = depth;
+  if (f.exists === false) { n.classList.add('gone'); n.title = `${f.path} (not available)`; }
+  else if (isCur(f.path)) { n.classList.add('cur'); paintCount(n.querySelector('.cnt'), liveCounts()); }
+  else queueStats(n);
+  return b;
+}
+
+function paintCount(el, s) {
+  el.className = 'cnt';
+  if (!s || !s.items) { el.textContent = ''; el.parentNode.title = el.parentNode.dataset.path + '\nNo photos'; return; }
+  el.classList.add(s.todo ? 'todo' : 'done');
+  el.textContent = s.todo ? s.todo : '✓';
+  el.parentNode.title = `${el.parentNode.dataset.path}\n` +
+    (s.todo ? `${s.todo} of ${s.items} still to sort` : `All ${s.items} sorted`) + (s.rejected ? ` · ${s.rejected} rejected` : '');
+}
+
+const liveCounts = () => ({ items: items.length, todo: items.filter(it => !it.rating && !it.label && !it.reject).length,
+                            rejected: items.filter(it => it.reject).length });
+
+// Other folders are scanned on the server, two at a time.
+// (Pumped on the next tick: the row isn't in the page yet when it's queued.)
+function queueStats(node) { statQueue.push([statGen, node]); setTimeout(pumpStats); }
+async function pumpStats() {
+  while (statBusy < 2 && statQueue.length) {
+    const [gen, node] = statQueue.shift();
+    if (gen !== statGen || !node.isConnected) continue;
+    statBusy++;
+    api(`/api/folder-stats?path=${enc(node.dataset.path)}`, null, { tries: 1, timeout: 0 })
+      .then(s => paintCount(node.querySelector('.cnt'), s)).catch(() => {})
+      .finally(() => { statBusy--; pumpStats(); });
+  }
+}
+
+async function loadSide(root) {
+  sideLoaded = true;
+  statGen++;
+  try {
+    const [t, recent] = await Promise.all([api('/api/folders' + (root ? `?path=${enc(root)}` : '')), api('/api/recent')]);
+    treeParent = t.parent;
+    $('#treeRoot').textContent = t.name;
+    $('#treeRoot').title = t.path;
+    $('#upBtn').disabled = !t.parent;
+    const tree = $('#tree'); tree.innerHTML = '';
+    t.children.forEach(f => tree.appendChild(branch(f, 0)));
+    if (!t.children.length) tree.innerHTML = '<div class="node" style="color:var(--dim)">No subfolders</div>';
+    const box = $('#recent'); box.innerHTML = '';
+    recent.forEach(f => box.appendChild(branch(f, 0)));
+    $('#recentBox').hidden = !recent.length;
+    tree.querySelector('.node.cur')?.scrollIntoView({ block: 'center' });
+  } catch (e) { toast(`Couldn't list folders: ${e.message}`, true); }
+}
+
+async function toggleBranch(node) {
+  const kids = node.nextElementSibling, tw = node.querySelector('.tw');
+  if (!tw.textContent) return;
+  if (kids.children.length) { kids.innerHTML = ''; tw.textContent = '▸'; return; }
+  tw.textContent = '▾';
+  try {
+    const t = await api(`/api/folders?path=${enc(node.dataset.path)}`);
+    t.children.forEach(f => kids.appendChild(branch(f, +node.dataset.depth + 1)));
+  } catch (e) { tw.textContent = '▸'; toast(`Couldn't list ${node.dataset.path}: ${e.message}`, true); }
+}
+
+async function openPath(path) {
+  if (pending) return toast('Wait for Saved before switching folders', true);
+  toast('Opening folder…', false, 60000);
+  try {
+    await api('/api/open', { path }, { tries: 1, timeout: 0 });  // scanning a big folder takes a moment
+    location.href = location.pathname;
+  } catch (e) { toast(`Couldn't open folder: ${e.message}`, true); }
+}
+
+$('#side').addEventListener('click', e => {
+  const node = e.target.closest('.node');
+  if (!node || !node.dataset.path) return;
+  if (e.target.closest('.tw') || node.classList.contains('cur')) return toggleBranch(node);
+  if (node.classList.contains('gone')) return toast(`${node.dataset.path} isn't available`, true);
+  openPath(node.dataset.path);
+});
+$('#upBtn').addEventListener('click', e => { e.target.blur(); if (treeParent) loadSide(treeParent); });
+$('#sideBtn').addEventListener('click', e => { e.target.blur(); setSide(!sideOpen); });
+
 function setAuto(v) {
   autoAdvance = v; $('#auto').classList.toggle('on', v);
   try { localStorage.setItem('pc.auto', v ? '1' : '0'); } catch {}
@@ -677,6 +813,7 @@ document.addEventListener('keydown', e => {
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   const inGrid = mode === 'grid';
   if (k === 'o') openFolder();
+  else if (k === 'b') setSide(!sideOpen);
   else if (k === 'g') setMode(inGrid ? 'single' : 'grid');
   else if (k === 't' && !inGrid) setStrip(!showStrip);
   else if (k === 'Enter' && inGrid) { e.preventDefault(); if (view.length) setMode('single'); }
@@ -746,6 +883,7 @@ $('#datesGo').addEventListener('click', doDates);
     const j = await api('/api/list');
     items = j.items;
     MEDIA = j.media; HEIF = j.heif;
+    FOLDER = j.folder;
     const folderName = j.folder.split(/[\\/]/).filter(Boolean).pop() || j.folder;
     $('#folder').textContent = folderName;
     $('#folder').title = j.folder;
@@ -754,6 +892,7 @@ $('#datesGo').addEventListener('click', doDates);
     rebuild(items.find(it => it.key === wanted)?.key || items.find(it => !it.rating && !it.reject)?.key);
     if (q.get('help') === '1') $('#helpModal').classList.add('show');
     if (j.notice) toast(j.notice, true, 9000);
+    try { if (localStorage.getItem('pc.side') === '1') setSide(true); } catch {}
   } catch (e) { stage.innerHTML = `<div class="empty">Couldn't load folder: ${esc(e.message)}</div>`; }
 })();
 </script>

@@ -5,6 +5,7 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.parse
 import urllib.request
 from unittest import mock
 
@@ -195,6 +196,54 @@ class FolderMemory(unittest.TestCase):
         self.assertIn("unplugged", notice)
 
 
+class Sidebar(Folder):
+    def setUp(self):
+        super().setUp()
+        for sub in ("Trip 10", "Trip 2", ".hidden", "$RECYCLE.BIN", os.path.join("Trip 2", "day1")):
+            os.makedirs(os.path.join(self.dir, sub))
+        patches = [mock.patch.object(K, "SETTINGS_FILE", os.path.join(self.dir, ".settings.json")),
+                   mock.patch.object(K.Handler, "cat", None)]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        K._STATS.clear()
+
+    def test_lists_visible_subfolders_in_natural_order(self):
+        self.cat.update("dsc_0001", rating=1)  # creates NKSC_PARAM, which must not be listed
+        t = K.folder_tree(self.dir)
+        self.assertEqual([(c["name"], c["has_children"]) for c in t["children"]],
+                         [("Trip 2", True), ("Trip 10", False)])
+        self.assertEqual(t["parent"], os.path.dirname(self.dir))
+
+    def test_counts_what_is_left_to_sort(self):
+        self.cat.update("dsc_0001", rating=3)
+        self.cat.update("img_0003", label="Blue")
+        self.cat.set_reject("clip", True)
+        self.assertEqual(K.folder_stats(self.dir), {"items": 4, "todo": 1, "rejected": 1})
+        self.assertEqual(K.folder_stats(os.path.join(self.dir, "Trip 2")), {"items": 0, "todo": 0, "rejected": 0})
+        self.assertPhotosUntouched()
+
+    def test_cached_counts_follow_new_decisions(self):
+        self.assertEqual(K.folder_stats(self.dir)["todo"], 4)
+        self.cat.set_reject("img_0002", True)
+        self.assertEqual(K.folder_stats(self.dir)["todo"], 3)
+
+    def test_quick_scan_skips_in_camera_ratings(self):
+        make_jpeg(os.path.join(self.dir, "DSC_0005.JPG"), xmp_rating=4)
+        make_nef(os.path.join(self.dir, "DSC_0005.NEF"))
+        self.assertEqual(K.Catalogue(self.dir).items["dsc_0005"]["rating"], 4)
+        self.assertEqual(K.Catalogue(self.dir, quick=True).items["dsc_0005"]["rating"], 0)
+
+    def test_recent_folders_most_recent_first(self):
+        trip2, trip10 = os.path.join(self.dir, "Trip 2"), os.path.join(self.dir, "Trip 10")
+        for f in (trip2, trip10, self.dir, trip2):
+            K.open_folder(f)
+        self.assertEqual(K.load_settings()["recent"], [trip2, self.dir, trip10])
+        self.assertEqual([r["path"] for r in K.recent_folders()], [self.dir, trip10])  # not the open one
+        os.rmdir(trip10)
+        self.assertFalse(K.recent_folders()[1]["exists"])
+
+
 class Api(Folder):
     """The HTTP endpoints the page uses, against a real server."""
 
@@ -236,6 +285,21 @@ class Api(Folder):
         self.assertEqual(X.read_pair(self.dir, ["DSC_0001.NEF", "DSC_0001.JPG"]), (3, "Blue"))
         self.assertEqual(self.state()["rejects"], ["img_0003"])
         self.assertPhotosUntouched()
+
+    def test_sidebar_endpoints(self):
+        sub = os.path.join(self.dir, "Trip")
+        os.makedirs(sub)
+        make_jpeg(os.path.join(sub, "IMG_9.JPG"))
+        _, _, body = self.get("/api/folders?path=" + urllib.parse.quote(self.dir))
+        self.assertEqual([c["name"] for c in json.loads(body)["children"]], ["Trip"])
+        _, _, body = self.get("/api/folder-stats?path=" + urllib.parse.quote(sub))
+        self.assertEqual(json.loads(body), {"items": 1, "todo": 1, "rejected": 0})
+        with mock.patch.object(K, "SETTINGS_FILE", os.path.join(self.dir, ".settings.json")):
+            self.assertEqual(self.post("/api/open", {"path": sub})["folder"], sub)
+            self.assertEqual(K.Handler.cat.folder, sub)
+            with self.assertRaises(urllib.error.HTTPError) as e:
+                self.post("/api/open", {"path": os.path.join(self.dir, "nope")})
+            self.assertEqual(e.exception.code, 404)
 
     def test_bad_rating_is_an_error_not_a_write(self):
         with self.assertRaises(urllib.error.HTTPError) as e:

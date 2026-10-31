@@ -202,6 +202,7 @@ view afterwards). Otherwise NX Studio can overwrite the new ratings from its cac
 | Key | Action |
 |---|---|
 | O | Open another folder (remembered for next time) |
+| B | Show / hide the folder sidebar |
 | G | Switch between grid and single-photo view |
 | Click | Grid: select a photo; click it again to open it in single view |
 | Enter | Grid: open the selected photo in single view |
@@ -223,6 +224,18 @@ view afterwards). Otherwise NX Studio can overwrite the new ratings from its cac
 
 The header shows **Saving… / Saved**. Wait for *Saved* before closing the
 browser tab; it warns you if a save is still in progress.
+
+### Folder sidebar
+
+Press **B** (or **☰**) for a sidebar listing the folders next to the open one,
+each with how many photos it still has to sort (no stars, label or reject
+yet). A green **✓** means the folder is done. Click a folder to open it, click
+**▸** to see its subfolders, and **↑** to go up a level. *Recent* lists the
+folders you've opened lately. The open folder's count updates as you work.
+
+The counts come from NX Studio sidecars and `.keeper.json` only, so even
+folders with thousands of photos are counted in a second or two. (Ratings set
+in the camera itself only show up once a folder is opened.)
 
 ### Fix dates
 
