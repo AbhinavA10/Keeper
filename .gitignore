@@ -1,5 +1,4 @@
 __pycache__/
 build/
-# Build output is ignored except the released exe, which is committed.
-dist/*
-!dist/Keeper.exe
+# Keeper.exe is published as a GitHub release (release.py), not committed.
+dist/

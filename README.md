@@ -55,7 +55,9 @@ Press `?` any time for the full list of shortcuts.
 ## Quick start: portable exe (nothing to install)
 
 `Keeper.exe` is a single file with Python and everything else built in.
-Copy it anywhere (Desktop, USB stick, another PC) and:
+Download it from the repo's
+**[Releases page](https://github.com/AbhinavA10/nx-sorting/releases/latest)**
+(under *Assets*), copy it anywhere (Desktop, USB stick, another PC) and:
 
 * **double-click it**, or
 * **drag a folder onto it**.
@@ -72,7 +74,7 @@ Requirements on the machine: **Windows 10 or 11** and a modern browser
 (Chrome, Edge or Firefox). Optionally **[ffmpeg](https://ffmpeg.org/download.html)**
 on the `PATH` for video thumbnails; videos still play without it.
 
-A ready-built exe is committed at `dist\Keeper.exe`; to make a fresh one,
+To make one from the current code instead,
 [build it](#build-the-portable-exe) (a minute or so). The first launch takes a few seconds while Windows
 unpacks it; Windows SmartScreen may ask you to confirm the first time because
 the exe isn't code-signed (*More info → Run anyway*).
@@ -123,8 +125,22 @@ conda run --no-capture-output -n keeper pyinstaller keeper.spec --noconfirm --cl
 
 The result is `dist\Keeper.exe` (about 20 MB), built from `keeper.spec`
 with the icon in `assets\`. Rebuild it after changing any `.py` or `.html` file.
-`dist\Keeper.exe` is committed so a ready-built copy is always in the repo;
-commit it again after rebuilding. (`build\` is ignored.)
+`dist\` and `build\` are ignored by git.
+
+### Publish a release
+
+The exe isn't committed: each 20 MB build would stay in the repo's history
+forever. GitHub Releases hold it instead. To publish one, bump `VERSION` at
+the top of `keeper.py`, commit and push, then run:
+
+```bash
+conda run --no-capture-output -n keeper python release.py
+```
+
+It checks that everything is committed and pushed, builds the exe, tags the
+commit (e.g. `v1.0.1`), and creates the release with the exe attached and
+notes generated from the commits. This needs the [GitHub CLI](https://cli.github.com/)
+(`gh`), signed in with `gh auth login`. `python release.py --build` only builds.
 
 ## Command line
 
@@ -257,3 +273,4 @@ used is remembered in `%APPDATA%\Keeper\settings.json`.
 | `media.py` | File types, previews (HEIC, raw, video) and thumbnails |
 | `environment.yml` | Conda environment (runtime + build tools) |
 | `keeper.spec`, `assets\keeper.ico` | PyInstaller build of `Keeper.exe` and its icon |
+| `release.py` | Builds `Keeper.exe` and publishes it as a GitHub release |

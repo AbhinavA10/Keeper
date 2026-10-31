@@ -32,6 +32,7 @@ import xmp_rating as X
 # Bundled files (keeper.html) live in PyInstaller's unpack folder when
 # running as Keeper.exe, and next to this script otherwise.
 HERE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+VERSION = "1.0.0"  # release.py tags and publishes this
 STATE_FILE = ".keeper.json"
 LEGACY_STATE_FILE = ".photocull.json"  # written by the app before it was renamed
 # Remembers the last folder. Kept apart from the thumbnail cache in
@@ -586,7 +587,7 @@ def main():
     Handler.media_url = f"http://127.0.0.1:{media.server_port}"
     threading.Thread(target=media.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{server.server_port}/"
-    print(f"Keeper running at {url}")
+    print(f"Keeper {VERSION} running at {url}")
     print("Close this window to quit.")
     if "--no-browser" not in sys.argv:
         webbrowser.open(url)
