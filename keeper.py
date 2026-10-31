@@ -32,7 +32,7 @@ import xmp_rating as X
 # Bundled files (keeper.html) live in PyInstaller's unpack folder when
 # running as Keeper.exe, and next to this script otherwise.
 HERE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-VERSION = "1.0.0"  # release.py tags and publishes this
+VERSION = "1.1.0"  # release.py tags and publishes this
 STATE_FILE = ".keeper.json"
 LEGACY_STATE_FILE = ".photocull.json"  # written by the app before it was renamed
 # Remembers the last folder. Kept apart from the thumbnail cache in
