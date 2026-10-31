@@ -9,12 +9,15 @@ from PIL import Image
 XMP_APP1 = b"http://ns.adobe.com/xap/1.0/\x00"
 
 
-def make_jpeg(path, taken=None, xmp_rating=None, size=(48, 32)):
-    """A JPEG, optionally with EXIF Date Taken ("YYYY:MM:DD HH:MM:SS") and an
-    in-camera XMP rating like the one Nikon cameras write."""
+def make_jpeg(path, taken=None, xmp_rating=None, size=(48, 32), subsec=None):
+    """A JPEG, optionally with EXIF Date Taken ("YYYY:MM:DD HH:MM:SS", plus
+    SubSecTimeOriginal digits) and an in-camera XMP rating like the one Nikon
+    cameras write."""
     exif = Image.Exif()
     if taken:
         exif.get_ifd(0x8769)[0x9003] = taken
+    if subsec:
+        exif.get_ifd(0x8769)[0x9291] = subsec
     buf = io.BytesIO()
     Image.new("RGB", size, (90, 120, 160)).save(buf, "JPEG", exif=exif.tobytes())
     data = buf.getvalue()

@@ -18,6 +18,7 @@ import socket
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 import webbrowser
 import zlib
 from ctypes import wintypes
@@ -32,7 +33,7 @@ import xmp_rating as X
 # Bundled files (keeper.html) live in PyInstaller's unpack folder when
 # running as Keeper.exe, and next to this script otherwise.
 HERE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-VERSION = "1.1.0"  # release.py tags and publishes this
+VERSION = "1.2.0"  # release.py tags and publishes this
 STATE_FILE = ".keeper.json"
 LEGACY_STATE_FILE = ".photocull.json"  # written by the app before it was renamed
 # Remembers the last folder. Kept apart from the thumbnail cache in
@@ -63,6 +64,8 @@ class Catalogue:
         self.folder = folder
         self.quick = quick
         self.lock = threading.Lock()
+        self.times = {}  # key -> capture time, filled by capture_times()
+        self.times_lock = threading.Lock()
         self.items = {}   # key -> dict
         self.order = []
         self.state = {"rejects": [], "ratings": {}, "labels": {}}
@@ -176,6 +179,19 @@ class Catalogue:
         with self.lock:
             (self.rejects.add if reject else self.rejects.discard)(key)
             self._save_state()
+
+    def capture_times(self):
+        """{key: Date Taken with sub-seconds, or None} for every item, for
+        grouping bursts. Read once per folder (a few seconds for 1,000
+        photos), in parallel, after the page has loaded."""
+        with self.times_lock:
+            with self.lock:
+                todo = [self.items[k] for k in self.order if k not in self.times]
+            paths = [None if i["render"] == "video" else os.path.join(self.folder, i["display"]) for i in todo]
+            with ThreadPoolExecutor(8) as ex:
+                for item, t in zip(todo, ex.map(lambda p: p and date_taken(p, subsec=True), paths)):
+                    self.times[item["key"]] = t
+            return dict(self.times)
 
     def fix_dates(self, apply=False):
         """Set each JPEG's Date Modified to its EXIF Date Taken.
@@ -311,25 +327,33 @@ def _raw_exif_dates(path):
     exif = next((u(v, 4) for t, _, _, v in entries(u(4, 4)) if t == 0x8769), 0)
     out = {}
     for t, typ, n, v in entries(exif) if exif else ():
-        if t in (0x9003, 0x9004) and typ == 2:  # ASCII
+        if t in _DATE_TAGS and typ == 2:  # ASCII
             at = v if n <= 4 else u(v, 4)
             out[t] = d[at:at + n].decode("ascii", "replace")
     return out
 
 
-def date_taken(path):
+# DateTimeOriginal and DateTimeDigitized, each with its SubSecTime tag.
+_DATE_TAGS = {0x9003: 0x9291, 0x9004: 0x9292}
+_DATE_TAGS.update({v: None for v in list(_DATE_TAGS.values())})
+
+
+def date_taken(path, subsec=False):
     """EXIF Date Taken (DateTimeOriginal, else DateTimeDigitized) as a local
-    timestamp, or None. Only the file's header is read."""
+    timestamp, or None; with subsec, to the fraction of a second the camera
+    recorded (needed to tell burst frames apart). Only the header is read."""
     try:
         if M.ext(path) in M.RAW:
             sub = _raw_exif_dates(path)
         else:
             with Image.open(path) as im:
                 sub = im.getexif().get_ifd(0x8769)
-        for tag in (0x9003, 0x9004):  # DateTimeOriginal, DateTimeDigitized
+        for tag in (0x9003, 0x9004):
             v = str(sub.get(tag) or "").strip("\0 ")
             if v and not v.startswith("0000"):
-                return time.mktime(time.strptime(v[:19], "%Y:%m:%d %H:%M:%S"))
+                t = time.mktime(time.strptime(v[:19], "%Y:%m:%d %H:%M:%S"))
+                frac = "".join(c for c in str(sub.get(_DATE_TAGS[tag]) or "") if c.isdigit())
+                return t + float("0." + frac) if subsec and frac else t
     except Exception:
         pass
     return None
@@ -414,6 +438,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, folder_stats(arg))
             if path == "/api/recent":
                 return self._send(200, recent_folders())
+            if path == "/api/times":
+                return self._send(200, self.cat.capture_times())
             if path == "/api/list":
                 cat = self.cat
                 # Media URLs carry a per-folder prefix so the browser's cached

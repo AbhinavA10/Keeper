@@ -160,6 +160,24 @@ class FixDates(Folder):
         self.assertEqual((again["change"], again["same"]), ([], 2))
 
 
+class CaptureTimes(Folder):
+    def test_sub_seconds_for_bursts(self):
+        p = make_jpeg(os.path.join(self.dir, "DSC_0009.JPG"), TAKEN, subsec="37")
+        self.assertAlmostEqual(K.date_taken(p, subsec=True), TAKEN_TS + .37, places=3)
+        self.assertEqual(K.date_taken(p), TAKEN_TS)  # Fix dates keeps whole seconds
+
+    def test_every_item_gets_a_time_or_none(self):
+        make_jpeg(os.path.join(self.dir, "DSC_0002.JPG"), TAKEN, subsec="5")
+        cat = K.Catalogue(self.dir)
+        times = cat.capture_times()
+        self.assertEqual(set(times), set(cat.items))
+        self.assertEqual(times["dsc_0001"], TAKEN_TS)
+        self.assertAlmostEqual(times["dsc_0002"], TAKEN_TS + .5)
+        self.assertIsNone(times["clip"])       # videos aren't read
+        self.assertIsNone(times["img_0003"])   # no Date Taken
+        self.assertPhotosUntouched()
+
+
 class FolderMemory(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -300,6 +318,10 @@ class Api(Folder):
             with self.assertRaises(urllib.error.HTTPError) as e:
                 self.post("/api/open", {"path": os.path.join(self.dir, "nope")})
             self.assertEqual(e.exception.code, 404)
+
+    def test_capture_times_endpoint(self):
+        _, _, body = self.get("/api/times")
+        self.assertEqual(json.loads(body)["dsc_0001"], TAKEN_TS)
 
     def test_bad_rating_is_an_error_not_a_write(self):
         with self.assertRaises(urllib.error.HTTPError) as e:

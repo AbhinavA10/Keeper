@@ -21,6 +21,25 @@
   #app.nostrip { grid-template-rows: 44px 1fr; }
   #app.nostrip #strip { display: none; }
 
+  /* Compare view (C): the frames of a burst side by side, replacing the stage. */
+  #cmp { grid-column: 2; grid-row: 2 / -1; display: none; gap: 8px; padding: 8px; min-height: 0; }
+  #app.cmpmode #cmp { display: grid; }
+  #app.cmpmode #stage, #app.cmpmode #strip, #app.cmpmode #gridWrap { display: none; }
+  .ct { position: relative; min-width: 0; min-height: 0; border-radius: 6px; border: 3px solid transparent; background: #000; cursor: pointer; }
+  .ct.sel { border-color: var(--sel); box-shadow: 0 0 0 3px rgba(59,130,246,.35); }
+  .ct .cv { position: absolute; inset: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  .ct .cv img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; user-select: none; -webkit-user-drag: none; }
+  #cmp.zoom .ct .cv { display: block; cursor: grab; }
+  #cmp.zoom .ct .cv img { max-width: none; max-height: none; }
+  .ct .ctag { position: absolute; left: 6px; bottom: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+    background: rgba(14,15,17,.78); border-radius: 6px; padding: 4px 8px; pointer-events: none; max-width: calc(100% - 12px); }
+  .ct .ctag .name { font-weight: 600; }
+  .ct .ctag .stars { font-size: 13px; letter-spacing: 1px; }
+  .th .bst { position: absolute; left: 4px; top: 4px; font-size: 10px; font-weight: 700; color: white; background: rgba(0,0,0,.65);
+    border-radius: 4px; padding: 1px 5px; display: none; }
+  .th.inburst .bst { display: block; }
+  .hud .burst { color: #93c5fd; font-size: 12px; }
+
   /* Column 1 is the folder sidebar (B), zero-width while it's hidden. */
   #app { grid-template-columns: var(--sidew, 0px) minmax(0, 1fr); }
   #app.side { --sidew: 270px; }
@@ -181,6 +200,7 @@
     </select>
     <input id="gsize" class="gridonly" type="range" min="140" max="420" step="20" value="220" title="Thumbnail size">
     <button id="viewBtn" title="Switch between grid and single-photo view (G)">▦ Grid</button>
+    <button id="cmpBtn" class="toggle" title="Compare this burst side by side (C)">⧉ Compare</button>
     <button id="stripBtn" class="toggle singleonly" title="Show thumbnails under the photo (T)">Filmstrip</button>
     <button id="auto" class="toggle on" title="Advance to next item after rating/rejecting (A)">Auto-advance</button>
     <button id="datesBtn" title="Set each JPEG's Date Modified to its Date Taken">🕒 Fix dates…</button>
@@ -193,6 +213,7 @@
     <div id="tree"></div>
   </nav>
   <div id="stage"><div class="empty">Loading…</div></div>
+  <div id="cmp"></div>
   <div id="strip"></div>
   <div id="gridWrap"><div id="grid"></div></div>
 </div>
@@ -226,6 +247,7 @@
       <kbd>Enter</kbd><span>Grid: open the selected photo (or click it again; the first click selects it)</span>
       <kbd>Esc</kbd><span>Single view: back to the grid</span>
       <kbd>T</kbd><span>Single view: show / hide the filmstrip of thumbnails</span>
+      <kbd>C</kbd><span>Compare: the photo's burst (shots within 2 s of each other, marked ⧉ on thumbnails) side by side. <kbd>← →</kbd> pick a frame; rate, label or reject it as usual; <kbd>K</kbd> keeps it and rejects the rest of the burst; <kbd>Z</kbd> or double-click zooms all frames together (drag to pan); <kbd>[ ]</kbd> previous / next burst; <kbd>Esc</kbd> or <kbd>C</kbd> to leave</span>
       <kbd>← →</kbd><span>Previous / next (also <kbd>Space</kbd>, <kbd>Backspace</kbd>); <kbd>↑ ↓</kbd> move by rows in the grid. Single view skips rejected photos; open one from the grid to see it.</span>
       <kbd>X</kbd><span>Toggle reject</span>
       <kbd>1 – 5</kbd><span>Set star rating</span>
@@ -359,7 +381,7 @@ function makeThumb(it, i) {
   d.dataset.i = i;
   d.title = it.name;
   d.innerHTML = `<img loading="lazy" decoding="async" src="${MEDIA}/thumb/${enc(it.key)}"><span class="ph">${esc(it.display)}</span>` +
-                `<span class="vid">▶ VIDEO</span><span class="bar"></span><span class="lbl"></span><span class="r"></span>` +
+                `<span class="vid">▶ VIDEO</span><span class="bst"></span><span class="bar"></span><span class="lbl"></span><span class="r"></span>` +
                 `<span class="nm">${esc(it.name)}</span>`;
   d.querySelector('img').onerror = () => d.classList.add('noimg');
   return d;
@@ -375,6 +397,9 @@ function paintThumb(i) {
     const r = d.querySelector('.r');
     r.textContent = it.rating ? '★'.repeat(it.rating) : '';
     r.classList.toggle('on', !!it.rating);
+    const b = bursts.get(it.key);
+    d.classList.toggle('inburst', !!b);
+    if (b) d.querySelector('.bst').textContent = `⧉ ${b.indexOf(it) + 1}/${b.length}`;
     d.classList.toggle('haslabel', !!it.label);
     if (it.label) {
       d.style.setProperty('--lc', LABELS[it.label] || '#888');
@@ -521,11 +546,202 @@ async function show() {
   const types = [...new Set(it.files.map(f => f.split('.').pop().toUpperCase()))].join('+');
   stage.querySelector('.hud').innerHTML =
     `<span class="name" title="${esc(it.name)}">${esc(it.name)}</span><span class="types">${esc(types)}</span>${starsHtml(it.rating)}` +
-    (it.reject ? `<span class="badge reject">⚑ REJECTED</span>` : '') + label + `<span class="exif">${exif}</span>`;
+    (it.reject ? `<span class="badge reject">⚑ REJECTED</span>` : '') + label + `<span class="exif">${exif}</span>` +
+    (bursts.has(it.key) ? `<span class="burst">⧉ Burst ${bursts.get(it.key).indexOf(it) + 1} of ${bursts.get(it.key).length} · <b>C</b> to compare</span>` : '');
   stage.querySelector('.pos').textContent = `${cur + 1} / ${view.length}`;
   if (!info && it.render === 'native') api(`/info/${enc(it.key)}`).then(j => { infoCache.set(it.key, j); if (view[cur] === it) show(); }).catch(() => {});
   for (const d of [1, 2, 3, -1]) preload(cur + d);
 }
+
+// ---- bursts: consecutive photos taken within BURST_GAP seconds of each
+// other, from capture times the server reads after the folder loads.
+const BURST_GAP = 2;
+let bursts = new Map();  // key -> the burst's items, in order (only bursts of 2+)
+
+async function loadBursts() {
+  let times;
+  try { times = await api('/api/times', null, { tries: 2, timeout: 0 }); } catch { return; }
+  bursts = new Map();
+  let run = [];
+  const flush = () => { if (run.length > 1) run.forEach(it => bursts.set(it.key, run)); run = []; };
+  for (const it of items) {
+    const t = times[it.key], prev = run[run.length - 1];
+    if (t == null || isVideo(it)) { flush(); continue; }
+    if (prev && !(t - times[prev.key] >= 0 && t - times[prev.key] <= BURST_GAP)) flush();
+    run.push(it);
+  }
+  flush();
+  view.forEach((_, i) => paintThumb(i));
+  if (mode === 'single' && !cmp) show();
+}
+
+// ---- compare view
+const CMP_MAX = 12;  // frames on screen at once; longer bursts scroll
+let cmp = null;  // { all: items, sel, start, from: 'single'|'grid', zoom: [fx, fy] | null }
+let BASE_TITLE = document.title;
+
+function openCompare(it = view[cur]) {
+  if (!it) return;
+  let all = bursts.get(it.key);
+  if (!all) {  // not a burst: compare with the next photo
+    const photos = items.filter(i => !isVideo(i)), i = photos.indexOf(it);
+    all = photos.slice(Math.max(0, Math.min(i, photos.length - 2)), Math.max(0, Math.min(i, photos.length - 2)) + 2);
+    if (all.length < 2) return toast('Nothing to compare with');
+  }
+  const vid = stage.querySelector('#vid');
+  if (vid) vid.pause();
+  if (zoomed) toggleZoom();
+  cmp = { all, sel: Math.max(0, all.indexOf(it)), start: 0, from: mode, zoom: null };
+  $('#app').classList.add('cmpmode');
+  $('#cmpBtn').classList.add('on');
+  renderCompare();
+}
+
+function closeCompare() {
+  if (!cmp) return;
+  const it = cmp.all[cmp.sel], from = cmp.from;
+  cmp = null;
+  $('#cmp').innerHTML = '';
+  $('#cmp').classList.remove('zoom');
+  $('#app').classList.remove('cmpmode');
+  $('#cmpBtn').classList.remove('on');
+  document.title = BASE_TITLE;
+  if (view.includes(it)) cur = view.indexOf(it); else rebuild(it.key);
+  setMode(from);
+}
+
+function renderCompare() {
+  const box = $('#cmp');
+  const n = Math.min(cmp.all.length, CMP_MAX);
+  // Keep the selected frame inside the visible window.
+  cmp.start = Math.min(Math.max(cmp.start, cmp.sel - n + 1), cmp.sel, cmp.all.length - n);
+  const shown = cmp.all.slice(cmp.start, cmp.start + n);
+  // Choose the column count that makes 3:2 tiles largest.
+  const W = box.clientWidth || innerWidth, H = box.clientHeight || innerHeight;
+  let best = 1, size = 0;
+  for (let c = 1; c <= n; c++) {
+    const r = Math.ceil(n / c), w = Math.min((W - 8 * (c + 1)) / c, ((H - 8 * (r + 1)) / r) * 1.5);
+    if (w > size) { size = w; best = c; }
+  }
+  box.style.gridTemplateColumns = `repeat(${best}, minmax(0, 1fr))`;
+  box.style.gridTemplateRows = `repeat(${Math.ceil(n / best)}, minmax(0, 1fr))`;
+  const keys = shown.map(it => it.key).join();
+  if (box.dataset.keys !== keys) {
+    box.dataset.keys = keys;
+    box.innerHTML = shown.map(it => `<div class="ct" data-key="${esc(it.key)}"><div class="cv"><img draggable="false" src="${MEDIA}/img/${enc(it.key)}"></div><div class="ctag"></div></div>`).join('');
+    box.querySelectorAll('img').forEach(img => img.addEventListener('load', () => cmp?.zoom && applyZoom()));
+  }
+  paintCompare();
+  if (cmp.zoom) applyZoom();
+}
+
+function paintCompare() {
+  if (!cmp) return;
+  $('#cmp').querySelectorAll('.ct').forEach(t => {
+    const it = cmp.all.find(i => i.key === t.dataset.key);
+    t.classList.toggle('sel', it === cmp.all[cmp.sel]);
+    const label = it.label ? `<span class="badge label" style="background:${LABELS[it.label] || '#666'}">${esc(labelName(it.label).toUpperCase())}</span>` : '';
+    t.querySelector('.ctag').innerHTML = `<span class="name">${esc(it.name)}</span>${starsHtml(it.rating)}` +
+      (it.reject ? `<span class="badge reject">⚑ REJECTED</span>` : '') + label;
+  });
+  const more = cmp.all.length > CMP_MAX ? ` (frames ${cmp.start + 1}–${cmp.start + Math.min(CMP_MAX, cmp.all.length)})` : '';
+  document.title = `Keeper — compare ${cmp.sel + 1} of ${cmp.all.length}${more}`;
+}
+
+function cmpMove(d) {
+  cmp.sel = Math.min(Math.max(cmp.sel + d, 0), cmp.all.length - 1);
+  renderCompare();
+}
+
+// The next / previous burst after the one being compared.
+function cmpNextBurst(dir) {
+  const edge = dir > 0 ? cmp.all[cmp.all.length - 1] : cmp.all[0];
+  for (let i = items.indexOf(edge) + dir; i >= 0 && i < items.length; i += dir) {
+    const b = bursts.get(items[i].key);
+    if (b) return openCompare(b[0]);
+  }
+  toast(dir > 0 ? 'No more bursts after this one' : 'No more bursts before this one');
+}
+
+// K: keep the selected frame, reject every other frame of the burst (one undo).
+async function keepOnly() {
+  const keep = cmp.all[cmp.sel], batch = [];
+  for (const it of cmp.all) {
+    const want = it !== keep;
+    if (it.reject !== want) { batch.push({ it, prev: { reject: it.reject } }); change(it, { reject: want }, false); }
+  }
+  if (batch.length) undo.push({ batch });
+  toast(`Kept ${keep.name}; rejected ${cmp.all.length - 1} other${cmp.all.length > 2 ? 's' : ''}`);
+  if (autoAdvance && bursts.has(keep.key)) setTimeout(() => cmp && cmpNextBurst(1), 600);
+}
+
+// Zoom every frame to 100% at the same spot, so detail can be compared.
+function applyZoom() {
+  const [fx, fy] = cmp.zoom;
+  $('#cmp').classList.add('zoom');
+  $('#cmp').querySelectorAll('.cv').forEach(cv => {
+    const img = cv.querySelector('img');
+    cv.scrollLeft = fx * img.naturalWidth - cv.clientWidth / 2;
+    cv.scrollTop = fy * img.naturalHeight - cv.clientHeight / 2;
+  });
+}
+
+function cmpZoom(e) {
+  if (cmp.zoom) { cmp.zoom = null; $('#cmp').classList.remove('zoom'); return; }
+  let fx = .5, fy = .5;
+  const img = e && e.target.closest('.ct')?.querySelector('img');
+  if (img) { const r = img.getBoundingClientRect(); fx = (e.clientX - r.left) / r.width; fy = (e.clientY - r.top) / r.height; }
+  cmp.zoom = [Math.min(Math.max(fx, 0), 1), Math.min(Math.max(fy, 0), 1)];
+  applyZoom();
+}
+
+function compareKey(e, k) {
+  if (k === 'Escape') { if (cmp.zoom) cmpZoom(); else closeCompare(); }
+  else if (k === 'c' || k === 'Enter') closeCompare();
+  else if (k === 'ArrowRight' || k === ' ') cmpMove(1);
+  else if (k === 'ArrowLeft' || k === 'Backspace') cmpMove(-1);
+  else if (k === 'ArrowDown' || k === 'ArrowUp') {
+    const cols = getComputedStyle($('#cmp')).gridTemplateColumns.split(' ').length;
+    cmpMove(k === 'ArrowDown' ? cols : -cols);
+  }
+  else if (k === 'Home') cmpMove(-cmp.all.length);
+  else if (k === 'End') cmpMove(cmp.all.length);
+  else if (/^[0-5]$/.test(k)) change(cmp.all[cmp.sel], { rating: +k });
+  else if (k === 'x') { const it = cmp.all[cmp.sel]; change(it, { reject: !it.reject }); }
+  else if (k === 's' || k === 'r' || k === 'f') { const it = cmp.all[cmp.sel], l = k === 'f' ? 'Blue' : 'Red'; change(it, { label: it.label === l ? null : l }); }
+  else if (k === 'k') keepOnly();
+  else if (k === 'z') cmpZoom();
+  else if (k === ']') cmpNextBurst(1);
+  else if (k === '[') cmpNextBurst(-1);
+  else return false;
+  e.preventDefault();
+  return true;
+}
+
+// Click selects a frame; double-click zooms; dragging pans all frames together.
+(() => {
+  const box = $('#cmp');
+  let drag = null;
+  box.addEventListener('pointerdown', e => {
+    if (!cmp || e.button !== 0) return;
+    drag = { x: e.clientX, y: e.clientY, moved: false };
+    if (cmp.zoom) box.setPointerCapture(e.pointerId);
+  });
+  box.addEventListener('pointermove', e => {
+    if (!drag || !cmp?.zoom) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+    box.querySelectorAll('.cv').forEach(cv => { cv.scrollLeft -= dx; cv.scrollTop -= dy; });
+    drag.x = e.clientX; drag.y = e.clientY;
+  });
+  box.addEventListener('pointerup', e => {
+    const t = !drag?.moved && e.target.closest('.ct');
+    drag = null;
+    if (t && cmp) { cmp.sel = cmp.all.findIndex(i => i.key === t.dataset.key); paintCompare(); }
+  });
+  box.addEventListener('dblclick', e => { if (cmp) cmpZoom(e); });
+  addEventListener('resize', () => cmp && renderCompare());
+})();
 
 // Single view steps over rejected items (unless you're filtering for them);
 // the only way to look at one is to open it from the grid.
@@ -619,10 +835,15 @@ function toggleLabel(l) {
 async function doUndo() {
   const u = undo.pop();
   if (!u) return toast('Nothing to undo');
+  if (u.batch) {  // Keep-only in compare: put every frame back as it was
+    await Promise.all(u.batch.map(({ it, prev }) => change(it, { ...prev }, false)));
+    return toast(`Undid keep (${u.batch.length} photo${u.batch.length > 1 ? 's' : ''})`);
+  }
   const { it, prev } = u;
   await change(it, { ...prev }, false);
   const i = view.indexOf(it);
-  if (i >= 0) { cur = i; show(); } else rebuild(it.key);
+  if (cmp) paintCompare();
+  else if (i >= 0) { cur = i; show(); } else rebuild(it.key);
   toast(`Undid ${it.name}`);
 }
 
@@ -630,7 +851,8 @@ function refresh(it) {
   const i = view.indexOf(it);
   if (i >= 0) paintThumb(i);
   stats();
-  if (view[cur] === it) show();
+  if (cmp) paintCompare();
+  else if (view[cur] === it) show();
 }
 
 function openDelete() {
@@ -793,6 +1015,7 @@ $('#side').addEventListener('click', e => {
 });
 $('#upBtn').addEventListener('click', e => { e.target.blur(); if (treeParent) loadSide(treeParent); });
 $('#sideBtn').addEventListener('click', e => { e.target.blur(); setSide(!sideOpen); });
+$('#cmpBtn').addEventListener('click', e => { e.target.blur(); cmp ? closeCompare() : openCompare(); });
 
 function setAuto(v) {
   autoAdvance = v; $('#auto').classList.toggle('on', v);
@@ -812,7 +1035,10 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.altKey || e.metaKey) return;
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   const inGrid = mode === 'grid';
-  if (k === 'o') openFolder();
+  // Compare has its own keys; of the rest, only these make sense there.
+  if (cmp && (compareKey(e, k) || !'oba?'.includes(k))) return;
+  if (k === 'c') openCompare();
+  else if (k === 'o') openFolder();
   else if (k === 'b') setSide(!sideOpen);
   else if (k === 'g') setMode(inGrid ? 'single' : 'grid');
   else if (k === 't' && !inGrid) setStrip(!showStrip);
@@ -887,11 +1113,12 @@ $('#datesGo').addEventListener('click', doDates);
     const folderName = j.folder.split(/[\\/]/).filter(Boolean).pop() || j.folder;
     $('#folder').textContent = folderName;
     $('#folder').title = j.folder;
-    document.title = `Keeper — ${folderName}`;
+    document.title = BASE_TITLE = `Keeper — ${folderName}`;
     const wanted = (q.get('item') || '').toLowerCase();
     rebuild(items.find(it => it.key === wanted)?.key || items.find(it => !it.rating && !it.reject)?.key);
     if (q.get('help') === '1') $('#helpModal').classList.add('show');
     if (j.notice) toast(j.notice, true, 9000);
+    loadBursts();  // capture times take a few seconds on big folders; bursts appear when ready
     try { if (localStorage.getItem('pc.side') === '1') setSide(true); } catch {}
   } catch (e) { stage.innerHTML = `<div class="empty">Couldn't load folder: ${esc(e.message)}</div>`; }
 })();

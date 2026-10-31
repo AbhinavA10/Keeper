@@ -208,6 +208,7 @@ view afterwards). Otherwise NX Studio can overwrite the new ratings from its cac
 | Enter | Grid: open the selected photo in single view |
 | Esc | Single view: back to the grid |
 | T | Single view: show / hide the filmstrip |
+| C | Compare the photo's burst side by side (see [Compare bursts](#compare-bursts)) |
 | ← → / Space / Backspace | Previous / next (↑ ↓ move by rows in the grid). Single view skips rejected photos |
 | X | Toggle reject |
 | 1–5, 0 | Set / clear stars |
@@ -224,6 +225,24 @@ view afterwards). Otherwise NX Studio can overwrite the new ratings from its cac
 
 The header shows **Saving… / Saved**. Wait for *Saved* before closing the
 browser tab; it warns you if a save is still in progress.
+
+### Compare bursts
+
+Photos taken within 2 seconds of each other are grouped as a **burst** and
+marked **⧉ 2/5** on their thumbnails. Press **C** (or **⧉ Compare**) to see the
+whole burst side by side, then pick the best frame:
+
+* **← →** select a frame (**↑ ↓** move by rows); rate, label or reject it with
+  the usual keys.
+* **K** keeps the selected frame and rejects every other frame of the burst
+  (one **Ctrl+Z** undoes it all). With auto-advance on, the next burst opens.
+* **Z** or double-click zooms all frames to 100% at the same spot; drag to pan
+  them together, to compare focus and detail.
+* **[ ]** go to the previous / next burst; **Esc** or **C** returns to where you were.
+
+For a photo that isn't part of a burst, **C** compares it with the next photo.
+Capture times are read in the background when a folder opens (a few seconds
+for 1,000 photos), so burst badges can appear shortly after the thumbnails.
 
 ### Folder sidebar
 
