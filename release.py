@@ -19,7 +19,13 @@ EXE = os.path.join(HERE, "dist", "Keeper.exe")
 
 
 def run(*cmd, capture=False):
-    r = subprocess.run(cmd, cwd=HERE, text=True, capture_output=capture)
+    env = None
+    if cmd[0] == "gh":
+        # conda points SSL_CERT_FILE/DIR at its own CA bundle. gh then ignores
+        # the Windows certificate store, which fails wherever antivirus (AVG
+        # here) inspects HTTPS with its own certificate.
+        env = {k: v for k, v in os.environ.items() if k not in ("SSL_CERT_FILE", "SSL_CERT_DIR")}
+    r = subprocess.run(cmd, cwd=HERE, text=True, capture_output=capture, env=env)
     if r.returncode:
         sys.exit(f"Failed: {' '.join(cmd)}\n{(r.stderr or '').strip()}")
     return (r.stdout or "").strip()
