@@ -33,7 +33,7 @@ import xmp_rating as X
 # Bundled files (keeper.html) live in PyInstaller's unpack folder when
 # running as Keeper.exe, and next to this script otherwise.
 HERE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-VERSION = "1.2.0"  # release.py tags and publishes this
+VERSION = "1.2.1"  # release.py tags and publishes this
 STATE_FILE = ".keeper.json"
 LEGACY_STATE_FILE = ".photocull.json"  # written by the app before it was renamed
 # Remembers the last folder. Kept apart from the thumbnail cache in
@@ -520,6 +520,13 @@ class Server(ThreadingHTTPServer):
     # The grid requests dozens of thumbnails at once; the default backlog of 5
     # makes Windows reset the overflow connections.
     request_queue_size = 128
+
+    def handle_error(self, request, client_address):
+        # A browser dropping a connection is routine: seeking in a video
+        # abandons the download in progress, and closing a tab ends keep-alive
+        # connections. Only print real errors.
+        if not isinstance(sys.exc_info()[1], ConnectionError):
+            super().handle_error(request, client_address)
 
 
 class ExclusiveServer(Server):

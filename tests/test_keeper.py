@@ -1,4 +1,5 @@
 """Folder scanning, where decisions are stored, Fix dates, folder memory and the API."""
+import io
 import json
 import os
 import tempfile
@@ -322,6 +323,16 @@ class Api(Folder):
     def test_capture_times_endpoint(self):
         _, _, body = self.get("/api/times")
         self.assertEqual(json.loads(body)["dsc_0001"], TAKEN_TS)
+
+    def test_dropped_connections_are_not_reported(self):
+        # Seeking a video drops the connection mid-download; that's routine.
+        for err, printed in ((ConnectionResetError(10054, "reset"), False), (ValueError("bug"), True)):
+            with self.subTest(err=type(err).__name__), mock.patch("sys.stderr", new_callable=io.StringIO) as out:
+                try:
+                    raise err
+                except Exception:
+                    self.server.handle_error(None, ("127.0.0.1", 1))
+                self.assertEqual(bool(out.getvalue()), printed)
 
     def test_bad_rating_is_an_error_not_a_write(self):
         with self.assertRaises(urllib.error.HTTPError) as e:

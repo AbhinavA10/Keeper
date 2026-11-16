@@ -179,8 +179,9 @@ Keeper's messages, including the URL to open, until you quit.)
 
 The page itself also accepts a starting state in its URL, handy for bookmarks:
 `?view=grid` or `?view=single`, `&strip=1` (show the filmstrip),
-`&item=DSC_1234` (open that photo), `&filter=unrated` (or `rejected`, `red`, `blue`,
-`r3` for 3★+ …) and `&help=1` (show the shortcuts).
+`&item=DSC_1234` (open that photo), `&filter=r1,r2,keep` (filter options,
+comma-separated: `r0`–`r5` for unrated to 5★, `keep`, `rejected`, `red`, `blue`,
+`nolabel`, `photos`, `videos`; `unrated` means `r0,keep`) and `&help=1` (show the shortcuts).
 
 ## Using it
 
@@ -194,6 +195,14 @@ labelling and rejecting work in both views.
 In single view, ← → step over rejected photos so you only see what's left.
 To look at a rejected photo again, open it from the grid (or filter for
 *Rejected*). It shows a yellow **⚑ REJECTED** flag in the info card.
+
+**Filter** (the button in the header, or **Shift+F**) shows only what you
+tick. Options are grouped: *Stars* (Unrated, ★1–★5), *Status* (Not rejected,
+Rejected), *Label* (Social media, Flagged, No label) and *Type* (Photos,
+Videos). Ticks in the same group are alternatives, so ★1 + ★2 shows 1- and
+2-star photos; ticks in different groups must all match, so adding *Not
+rejected* hides rejected ones among them. Each option shows how many photos it
+matches; *Show all* clears the filter.
 
 Before culling a folder in Keeper, **close NX Studio** (or refresh its folder
 view afterwards). Otherwise NX Studio can overwrite the new ratings from its cache.
@@ -209,15 +218,16 @@ view afterwards). Otherwise NX Studio can overwrite the new ratings from its cac
 | Esc | Single view: back to the grid |
 | T | Single view: show / hide the filmstrip |
 | C | Compare the photo's burst side by side (see [Compare bursts](#compare-bursts)) |
-| ← → / Space / Backspace | Previous / next (↑ ↓ move by rows in the grid). Single view skips rejected photos |
+| ← → / Backspace | Previous / next (↑ ↓ move by rows in the grid). Single view skips rejected photos |
 | X | Toggle reject |
 | 1–5, 0 | Set / clear stars |
 | S (or R) | Toggle social media: shareable, no people (stored as the Red label, 1, in NX Studio) |
 | F | Toggle flagged: needs more correction in NX Studio (stored as the Blue label, 5). A photo has one label, so this replaces social media |
+| Space | Play / pause a video; zoom a photo to 100% and back (in compare: zoom all frames) |
 | Z or click | Zoom to 100% |
 | P | Play / pause video |
 | Ctrl+Z | Undo |
-| Shift+F | Cycle filter (unrated, rejected, social media, flagged, 3★+, photos, videos …) |
+| Shift+F | Open / close the filter |
 | A | Toggle auto-advance to the next photo after rating or rejecting |
 | Home / End | First / last |
 | Del | Review and move rejected items to the Recycle Bin |

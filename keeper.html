@@ -21,6 +21,20 @@
   #app.nostrip { grid-template-rows: 44px 1fr; }
   #app.nostrip #strip { display: none; }
 
+  /* Filter: a button opening checkbox groups. */
+  .fwrap { position: relative; }
+  #filterBtn { max-width: 230px; overflow: hidden; text-overflow: ellipsis; }
+  #filterBtn.on { border-color: var(--sel); color: #bfdbfe; }
+  #filterPop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; display: flex; gap: 22px; white-space: nowrap;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+  #filterPop[hidden] { display: none; }
+  #filterPop h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--dim); }
+  #filterPop label { display: flex; align-items: center; gap: 7px; padding: 3px 0; cursor: pointer; }
+  #filterPop label .n { color: var(--dim); font-size: 11px; margin-left: auto; padding-left: 10px; font-variant-numeric: tabular-nums; }
+  #filterPop input { accent-color: var(--sel); margin: 0; }
+  #filterPop .fcol:last-child { display: flex; flex-direction: column; }
+  #filterPop .fclear { margin-top: auto; }
+
   /* Compare view (C): the frames of a burst side by side, replacing the stage. */
   #cmp { grid-column: 2; grid-row: 2 / -1; display: none; gap: 8px; padding: 8px; min-height: 0; }
   #app.cmpmode #cmp { display: grid; }
@@ -183,21 +197,10 @@
     <span class="stat"><b id="sRed" style="color:var(--red)">0</b> social media</span>
     <span class="stat"><b id="sBlue" style="color:var(--sel)">0</b> flagged</span>
     <span class="stat"><b id="sRej" style="color:var(--reject)">0</b> rejected</span>
-    <select id="filter" title="Filter (Shift+F)">
-      <option value="all">All items</option>
-      <option value="unrated">Unrated</option>
-      <option value="keep">Not rejected</option>
-      <option value="rejected">Rejected</option>
-      <option value="red">Social media</option>
-      <option value="blue">Flagged</option>
-      <option value="r1">★ 1+</option>
-      <option value="r2">★ 2+</option>
-      <option value="r3">★ 3+</option>
-      <option value="r4">★ 4+</option>
-      <option value="r5">★ 5</option>
-      <option value="photos">Photos only</option>
-      <option value="videos">Videos only</option>
-    </select>
+    <span class="fwrap">
+      <button id="filterBtn" title="Filter (Shift+F)">All items ▾</button>
+      <div id="filterPop" hidden></div>
+    </span>
     <input id="gsize" class="gridonly" type="range" min="140" max="420" step="20" value="220" title="Thumbnail size">
     <button id="viewBtn" title="Switch between grid and single-photo view (G)">▦ Grid</button>
     <button id="cmpBtn" class="toggle" title="Compare this burst side by side (C)">⧉ Compare</button>
@@ -247,17 +250,16 @@
       <kbd>Enter</kbd><span>Grid: open the selected photo (or click it again; the first click selects it)</span>
       <kbd>Esc</kbd><span>Single view: back to the grid</span>
       <kbd>T</kbd><span>Single view: show / hide the filmstrip of thumbnails</span>
-      <kbd>C</kbd><span>Compare: the photo's burst (shots within 2 s of each other, marked ⧉ on thumbnails) side by side. <kbd>← →</kbd> pick a frame; rate, label or reject it as usual; <kbd>K</kbd> keeps it and rejects the rest of the burst; <kbd>Z</kbd> or double-click zooms all frames together (drag to pan); <kbd>[ ]</kbd> previous / next burst; <kbd>Esc</kbd> or <kbd>C</kbd> to leave</span>
-      <kbd>← →</kbd><span>Previous / next (also <kbd>Space</kbd>, <kbd>Backspace</kbd>); <kbd>↑ ↓</kbd> move by rows in the grid. Single view skips rejected photos; open one from the grid to see it.</span>
+      <kbd>C</kbd><span>Compare: the photo's burst (shots within 2 s of each other, marked ⧉ on thumbnails) side by side. <kbd>← →</kbd> pick a frame; rate, label or reject it as usual; <kbd>K</kbd> keeps it and rejects the rest of the burst; <kbd>Z</kbd>, <kbd>Space</kbd> or double-click zooms all frames together (drag to pan); <kbd>[ ]</kbd> previous / next burst; <kbd>Esc</kbd> or <kbd>C</kbd> to leave</span>
+      <kbd>← →</kbd><span>Previous / next (also <kbd>Backspace</kbd> for previous); <kbd>↑ ↓</kbd> move by rows in the grid. Single view skips rejected photos; open one from the grid to see it.</span>
       <kbd>X</kbd><span>Toggle reject</span>
       <kbd>1 – 5</kbd><span>Set star rating</span>
       <kbd>0</kbd><span>Clear rating</span>
       <kbd>S</kbd><span>Toggle social media — shareable, no people (red label in NX Studio; <kbd>R</kbd> also works)</span>
       <kbd>F</kbd><span>Toggle flagged — needs more correction in NX Studio (blue label). A photo has one label, so this replaces social media.</span>
-      <kbd>Z</kbd><span>Zoom to 100% (or click the photo)</span>
-      <kbd>P</kbd><span>Play / pause video</span>
+      <kbd>Space</kbd><span>Play / pause a video; zoom a photo to 100% and back (also <kbd>Z</kbd>, <kbd>P</kbd>, or click the photo)</span>
       <kbd>Ctrl Z</kbd><span>Undo last change</span>
-      <kbd>Shift F</kbd><span>Cycle filter</span>
+      <kbd>Shift F</kbd><span>Open / close the filter. Tick several options in a group to see any of them (e.g. ★1 and ★2); ticks in different groups must all match</span>
       <kbd>A</kbd><span>Toggle auto-advance</span>
       <kbd>Home End</kbd><span>First / last</span>
       <kbd>Del</kbd><span>Review and delete rejected items</span>
@@ -341,23 +343,93 @@ async function openFolder() {
   b.disabled = false;
 }
 
-function matches(it, f) {
-  switch (f) {
-    case 'unrated': return !it.reject && !it.rating;
+// ---- filter: checkboxes in groups. Within a group any ticked option may
+// match (★1 or ★2); every group with ticks must match (and Not rejected).
+const FILTER_GROUPS = [
+  ['Stars', [['r0', 'Unrated'], ['r1', '★1'], ['r2', '★2'], ['r3', '★3'], ['r4', '★4'], ['r5', '★5']]],
+  ['Status', [['keep', 'Not rejected'], ['rejected', 'Rejected']]],
+  ['Label', [['red', 'Social media'], ['blue', 'Flagged'], ['nolabel', 'No label']]],
+  ['Type', [['photos', 'Photos'], ['videos', 'Videos']]],
+];
+const filt = new Set();  // ticked option ids
+
+function hasToken(it, t) {
+  switch (t) {
     case 'keep': return !it.reject;
     case 'rejected': return it.reject;
     case 'red': return it.label === 'Red';
     case 'blue': return it.label === 'Blue';
+    case 'nolabel': return !it.label;
     case 'photos': return !isVideo(it);
     case 'videos': return isVideo(it);
-    case 'all': return true;
-    default: return !it.reject && it.rating >= +f.slice(1);
+    default: return (it.rating || 0) === +t.slice(1);  // r0..r5
   }
 }
 
+function matches(it) {
+  return FILTER_GROUPS.every(([, opts]) => {
+    const on = opts.filter(([t]) => filt.has(t));
+    return !on.length || on.some(([t]) => hasToken(it, t));
+  });
+}
+
+// ?filter= takes option ids, comma-separated (r1,r2,keep). "unrated" is
+// shorthand for r0,keep, as the old single-choice filter meant it.
+function setFilterFrom(s) {
+  filt.clear();
+  for (const t of String(s).split(',')) {
+    if (t === 'unrated') { filt.add('r0'); filt.add('keep'); }
+    else if (FILTER_GROUPS.some(([, opts]) => opts.some(([id]) => id === t))) filt.add(t);
+  }
+  paintFilter();
+}
+
+function paintFilter() {
+  const parts = FILTER_GROUPS.map(([, opts]) => opts.filter(([t]) => filt.has(t)).map(([, l]) => l).join(', ')).filter(Boolean);
+  const b = $('#filterBtn');
+  b.textContent = (parts.length ? parts.join(' · ') : 'All items') + ' ▾';
+  b.title = `Filter (Shift+F)${parts.length ? ': ' + parts.join(' · ') : ''}`;
+  b.classList.toggle('on', parts.length > 0);
+  $('#filterPop').querySelectorAll('input').forEach(c => c.checked = filt.has(c.value));
+}
+
+// Drawn when opened (with fresh counts); ticking only updates it in place,
+// so focus stays put for Tab / Space.
+function renderFilterPop() {
+  $('#filterPop').innerHTML = FILTER_GROUPS.map(([name, opts]) => `<div class="fcol"><h4>${name}</h4>` +
+    opts.map(([t, l]) => `<label><input type="checkbox" value="${t}"${filt.has(t) ? ' checked' : ''}>${esc(l)}` +
+      `<span class="n">${items.filter(it => hasToken(it, t)).length}</span></label>`).join('') +
+    (name === 'Type' ? `<button class="fclear">Show all</button>` : '') + '</div>').join('');
+}
+
+function toggleFilterPop(open = $('#filterPop').hidden) {
+  $('#filterPop').hidden = !open;
+  if (open) { renderFilterPop(); $('#filterPop input')?.focus(); }
+  else document.activeElement?.blur();
+}
+
+// After the filter changes, stay on the current item if it still matches,
+// else move to the next one that does.
+function refilter() {
+  paintFilter();
+  const it = view[cur], from = Math.max(0, items.indexOf(it));
+  const keep = it && matches(it) ? it : items.slice(from).find(matches) || items.find(matches);
+  rebuild(keep?.key);
+}
+
+$('#filterBtn').addEventListener('click', () => toggleFilterPop());
+$('#filterPop').addEventListener('change', e => {
+  filt[e.target.checked ? 'add' : 'delete'](e.target.value);
+  refilter();
+});
+$('#filterPop').addEventListener('click', e => {
+  if (!e.target.closest('.fclear')) return;
+  filt.clear(); refilter();
+});
+document.addEventListener('pointerdown', e => { if (!e.target.closest('.fwrap') && !$('#filterPop').hidden) toggleFilterPop(false); });
+
 function rebuild(keepKey) {
-  const f = $('#filter').value;
-  view = items.filter(it => matches(it, f) || it.key === keepKey);
+  view = items.filter(it => matches(it) || it.key === keepKey);
   cur = Math.max(0, keepKey ? view.findIndex(it => it.key === keepKey) : 0);
   // The strip and the grid hold the same thumbnails, in view order.
   for (const box of [strip, grid]) {
@@ -698,7 +770,8 @@ function cmpZoom(e) {
 function compareKey(e, k) {
   if (k === 'Escape') { if (cmp.zoom) cmpZoom(); else closeCompare(); }
   else if (k === 'c' || k === 'Enter') closeCompare();
-  else if (k === 'ArrowRight' || k === ' ') cmpMove(1);
+  else if (k === ' ') cmpZoom();
+  else if (k === 'ArrowRight') cmpMove(1);
   else if (k === 'ArrowLeft' || k === 'Backspace') cmpMove(-1);
   else if (k === 'ArrowDown' || k === 'ArrowUp') {
     const cols = getComputedStyle($('#cmp')).gridTemplateColumns.split(' ').length;
@@ -745,7 +818,7 @@ function compareKey(e, k) {
 
 // Single view steps over rejected items (unless you're filtering for them);
 // the only way to look at one is to open it from the grid.
-const skips = it => mode === 'single' && it.reject && $('#filter').value !== 'rejected';
+const skips = it => mode === 'single' && it.reject && !filt.has('rejected');
 
 // First index from i, moving by step, that isn't skipped (-1 if none).
 function landFrom(i, step) {
@@ -760,7 +833,6 @@ function jump(i, step) {
 
 function go(delta) {
   if (!view.length) return;
-  const f = $('#filter').value;
   // Leave items that no longer match the filter behind as we move on.
   const left = view[cur];
   let next = Math.min(Math.max(cur + delta, 0), view.length - 1);
@@ -770,8 +842,15 @@ function go(delta) {
   }
   if (next === cur) return;
   const target = view[next];
-  if (!matches(left, f)) { rebuild(target.key); return; }
+  if (!matches(left)) { rebuild(target.key); return; }
   cur = next; show();
+}
+
+// Space (and P): play / pause a video, zoom a photo to 100% and back.
+function playOrZoom() {
+  const v = stage.querySelector('#vid');
+  if (v && !v.hidden) v.paused ? v.play() : v.pause();
+  else toggleZoom();
 }
 
 function toggleZoom(e) {
@@ -1030,6 +1109,10 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Enter' && modal.id === 'datesModal') { e.preventDefault(); if (!$('#datesGo').hidden) doDates(); else modal.classList.remove('show'); }
     return;
   }
+  if (!$('#filterPop').hidden) {
+    if (e.key === 'Escape' || (e.key === 'F' && e.shiftKey)) { e.preventDefault(); return toggleFilterPop(false); }
+    if (e.target.closest('#filterPop')) return;  // Space/Tab work the checkboxes
+  }
   if ((e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') && e.key.startsWith('Arrow')) return;
   if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); return doUndo(); }
   if (e.ctrlKey || e.altKey || e.metaKey) return;
@@ -1046,6 +1129,7 @@ document.addEventListener('keydown', e => {
   else if (k === 'Escape' && !inGrid) { if (zoomed) toggleZoom(); else setMode('grid'); }
   else if (inGrid && k === 'ArrowDown') { e.preventDefault(); go(gridCols()); }
   else if (inGrid && k === 'ArrowUp') { e.preventDefault(); go(-gridCols()); }
+  else if (k === ' ' && !inGrid) { e.preventDefault(); playOrZoom(); }
   else if (k === 'ArrowRight' || k === ' ' || k === 'ArrowDown') { e.preventDefault(); go(1); }
   else if (k === 'ArrowLeft' || k === 'Backspace' || k === 'ArrowUp') { e.preventDefault(); go(-1); }
   else if (k === 'Home') jump(0, 1);
@@ -1055,9 +1139,9 @@ document.addEventListener('keydown', e => {
   else if (k === 's' || k === 'r') toggleLabel('Red');
   else if (k === 'f' && !e.shiftKey) toggleLabel('Blue');
   else if (k === 'z' && !inGrid) toggleZoom();
-  else if (k === 'p' && !inGrid) { const v = stage.querySelector('#vid'); if (v && !v.hidden) v.paused ? v.play() : v.pause(); }
+  else if (k === 'p' && !inGrid) playOrZoom();
   else if (k === 'a') setAuto(!autoAdvance);
-  else if (k === 'f') { const s = $('#filter'); s.selectedIndex = (s.selectedIndex + 1) % s.options.length; s.dispatchEvent(new Event('change')); toast(s.options[s.selectedIndex].text); }
+  else if (k === 'f') toggleFilterPop();
   else if (k === 'Delete') openDelete();
   else if (k === '?') $('#helpModal').classList.add('show');
 });
@@ -1080,7 +1164,6 @@ function setGridSize(px) {
 $('#gsize').addEventListener('input', e => setGridSize(e.target.value));
 $('#gsize').addEventListener('change', e => { e.target.blur(); markCurrent(); });
 strip.addEventListener('wheel', e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { strip.scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false });
-$('#filter').addEventListener('change', e => { e.target.blur(); rebuild(view[cur]?.key); });
 $('#auto').addEventListener('click', e => { setAuto(!autoAdvance); e.target.blur(); });
 $('#help').addEventListener('click', e => { $('#helpModal').classList.add('show'); e.target.blur(); });
 $('#helpClose').addEventListener('click', () => $('#helpModal').classList.remove('show'));
@@ -1104,7 +1187,7 @@ $('#datesGo').addEventListener('click', doDates);
   const q = new URLSearchParams(location.search);
   if (q.has('view')) { mode = q.get('view') === 'grid' ? 'grid' : 'single'; $('#app').classList.toggle('gridmode', mode === 'grid'); $('#viewBtn').textContent = mode === 'grid' ? '▣ Single' : '▦ Grid'; }
   if (q.has('strip')) setStrip(q.get('strip') === '1');
-  if (q.has('filter')) $('#filter').value = q.get('filter');
+  if (q.has('filter')) setFilterFrom(q.get('filter'));
   try {
     const j = await api('/api/list');
     items = j.items;
@@ -1115,7 +1198,8 @@ $('#datesGo').addEventListener('click', doDates);
     $('#folder').title = j.folder;
     document.title = BASE_TITLE = `Keeper — ${folderName}`;
     const wanted = (q.get('item') || '').toLowerCase();
-    rebuild(items.find(it => it.key === wanted)?.key || items.find(it => !it.rating && !it.reject)?.key);
+    rebuild(items.find(it => it.key === wanted)?.key || items.find(it => !it.rating && !it.reject && matches(it))?.key
+            || items.find(matches)?.key);
     if (q.get('help') === '1') $('#helpModal').classList.add('show');
     if (j.notice) toast(j.notice, true, 9000);
     loadBursts();  // capture times take a few seconds on big folders; bursts appear when ready
