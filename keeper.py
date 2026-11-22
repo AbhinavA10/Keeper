@@ -33,7 +33,7 @@ import xmp_rating as X
 # Bundled files (keeper.html) live in PyInstaller's unpack folder when
 # running as Keeper.exe, and next to this script otherwise.
 HERE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-VERSION = "1.2.1"  # release.py tags and publishes this
+VERSION = "1.3.0"  # release.py tags and publishes this
 STATE_FILE = ".keeper.json"
 LEGACY_STATE_FILE = ".photocull.json"  # written by the app before it was renamed
 # Remembers the last folder. Kept apart from the thumbnail cache in
@@ -54,6 +54,11 @@ def _is_nikon_jpeg(path):
         return False
     b = X._packet_bounds(head)
     return bool(b) and b"NIKON" in head[b[0]:b[1]]
+
+
+def _file_order(name):
+    """Order of an item's files: raw first, edit sidecars last."""
+    return M.ext(name) not in M.RAW, M.ext(name) in M.COMPANION, name
 
 
 class Catalogue:
@@ -108,7 +113,7 @@ class Catalogue:
             display, render = M.pick_display(files)
             if not display:
                 continue  # only companions left (e.g. a stray .xmp)
-            files.sort(key=lambda n: (M.ext(n) not in M.RAW, M.ext(n) in M.COMPANION, n))
+            files.sort(key=_file_order)
             images = [n for n in files if M.ext(n) in M.IMAGES]
             nikon = bool(images) and (
                 any(M.ext(n) in NIKON_RAW for n in images)
@@ -127,7 +132,8 @@ class Catalogue:
             items[key] = {"key": key, "name": os.path.splitext(display)[0], "files": files,
                           "images": images, "display": display, "render": render,
                           "nikon": nikon, "rating": rating, "label": label,
-                          "viewable": render != "heif" or M.HAVE_HEIF}
+                          "viewable": render != "heif" or M.HAVE_HEIF,
+                          "rotated": render == "video" and M.original_name(display) in files}
         with self.lock:
             self.items = items
             self.order = sorted(items, key=lambda k: M.natural_key(items[k]["name"]))
@@ -193,6 +199,68 @@ class Catalogue:
                     self.times[item["key"]] = t
             return dict(self.times)
 
+    def rotate_video(self, key, degrees):
+        """Turn a video by degrees clockwise (90, -90 or 180), losslessly.
+
+        Only the rotation stored in the file's header changes. The first time,
+        the original is renamed to <name>_original.<ext> (keeping its dates)
+        and the rotated copy takes its name and its Created/Modified/Accessed
+        times; videos have no EXIF, so these are what they sort by. Later turns
+        are made from that original again, and turning back to how it was
+        recorded puts the original back (the rotated copy goes to the Recycle Bin).
+        """
+        item = self.items[key]
+        shown = item["display"]
+        path = os.path.join(self.folder, shown)
+        orig = os.path.join(self.folder, M.original_name(shown))
+        if item["render"] != "video":
+            raise ValueError("Only videos can be rotated")
+        if degrees % 90:
+            raise ValueError("rotate by a multiple of 90 degrees")
+        if M.ext(path) not in M.ROTATABLE:
+            raise ValueError(f"Can't rotate {M.ext(path)} videos, only MP4 and MOV")
+        if not (M.FFMPEG and M.FFPROBE):
+            raise LookupError("Rotating videos needs ffmpeg (see README)")
+        with ROTATING:
+            had_orig = os.path.exists(orig)
+            src = orig if had_orig else path  # always rotate the untouched original
+            st = os.stat(src)                 # whose dates the result keeps
+            src_info = M.video_info(src)
+            ccw = _angle(M.video_info(path)["rotation"] - degrees)
+            note = ""
+            M.forget(path)
+            if had_orig and ccw == _angle(src_info["rotation"]):
+                # Back the way it was recorded: the original takes its name back.
+                _when_free(lambda: recycle([path]), shown)
+                _when_free(lambda: os.rename(orig, path), shown)
+            else:
+                base, ext = os.path.splitext(path)
+                tmp = f"{base}.keeper-rotating{ext}"
+                try:
+                    note = M.write_rotated(src, tmp, ccw)
+                    after = M.video_info(tmp)
+                    if (_angle(after["rotation"]) != ccw or abs(after["duration"] - src_info["duration"]) > 0.5
+                            or after["streams"].count("video") != src_info["streams"].count("video")):
+                        raise ValueError("the rotated copy didn't check out")
+                    if not had_orig:
+                        _when_free(lambda: os.rename(path, orig), shown)  # rename keeps its dates
+                    _when_free(lambda: os.replace(tmp, path), shown)
+                except BaseException:
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
+                    if not had_orig and os.path.exists(orig) and not os.path.exists(path):
+                        os.rename(orig, path)
+                    raise
+                # Last, all at once: opening the file to set times counts as an access.
+                set_file_times(path, st.st_ctime_ns, st.st_atime_ns, st.st_mtime_ns)  # st_ctime = created, on Windows
+            M.forget(path)
+            kept = os.path.exists(orig)
+            item["files"] = sorted({*item["files"], M.original_name(shown)} if kept else
+                                   set(item["files"]) - {M.original_name(shown)}, key=_file_order)
+            item["rotated"] = kept
+            item["ver"] = item.get("ver", 0) + 1
+        return {"rotation": ccw, "ver": item["ver"], "note": note, "rotated": kept, "files": item["files"]}
+
     def fix_dates(self, apply=False):
         """Set each JPEG's Date Modified to its EXIF Date Taken.
 
@@ -252,6 +320,50 @@ class Catalogue:
             self.order = [b for b in self.order if b in self.items]
             self._save_state()
         return deleted, failed
+
+
+ROTATING = threading.Lock()  # one video rewrite at a time
+
+
+def _when_free(action, name):
+    """Run a rename or recycle on a video the browser may not have let go of
+    yet (it was just playing); retry for a few seconds."""
+    for _ in range(10):
+        try:
+            if action() is not False:
+                return
+        except PermissionError:
+            pass
+        time.sleep(0.5)
+    raise OSError(f"{name} is in use; close anything playing it and try again")
+
+
+def _angle(a):
+    """Degrees normalised to (-180, 180], as ffprobe reports rotation."""
+    a %= 360
+    return a - 360 if a > 180 else a
+
+
+class FILETIME(ctypes.Structure):
+    _fields_ = [("lo", wintypes.DWORD), ("hi", wintypes.DWORD)]
+
+
+def set_file_times(path, created_ns, accessed_ns, modified_ns):
+    """Set a file's Windows Created, Accessed and Modified times together
+    (os.utime can't set Created)."""
+    def ft(ns):
+        t = ns // 100 + 116444736000000000  # 100-ns ticks since 1601
+        return ctypes.byref(FILETIME(t & 0xFFFFFFFF, t >> 32))
+    k = ctypes.windll.kernel32
+    k.CreateFileW.restype = wintypes.HANDLE
+    h = k.CreateFileW(path, 0x100, 7, None, 3, 0x80, None)  # FILE_WRITE_ATTRIBUTES, share all, OPEN_EXISTING
+    if h in (None, wintypes.HANDLE(-1).value):
+        raise OSError(f"can't set the dates of {os.path.basename(path)}")
+    try:
+        if not k.SetFileTime(wintypes.HANDLE(h), ft(created_ns), ft(accessed_ns), ft(modified_ns)):
+            raise OSError(f"can't set the dates of {os.path.basename(path)}")
+    finally:
+        k.CloseHandle(wintypes.HANDLE(h))
 
 
 # ---------------------------------------------------------------- recycle bin
@@ -489,6 +601,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/delete-rejects":
                 deleted, failed = self.cat.delete_rejects()
                 return self._send(200, {"deleted": deleted, "failed": failed})
+            if self.path == "/api/rotate":
+                return self._send(200, self.cat.rotate_video(data["key"], int(data["degrees"])))
             if self.path == "/api/fix-dates":
                 return self._send(200, self.cat.fix_dates(apply=bool(data.get("apply"))))
             if self.path == "/api/open":  # a folder picked in the sidebar

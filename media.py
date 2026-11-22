@@ -8,6 +8,7 @@ JPEG preview here and cached under %LOCALAPPDATA%\\Keeper:
 """
 import hashlib
 import io
+import json
 import os
 import re
 import shutil
@@ -40,21 +41,38 @@ CONTENT_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png
 CACHE_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Keeper")
 THUMB_PX = 320
 FFMPEG = shutil.which("ffmpeg")
+FFPROBE = shutil.which("ffprobe")
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def ext(name):
     return os.path.splitext(name)[1].lower()
 
 
+ORIGINAL = "_original"  # a rotated video's original is kept as <name>_original.<ext>
+
+
+def is_original(name):
+    return ext(name) in VIDEO and os.path.splitext(name)[0].lower().endswith(ORIGINAL)
+
+
+def original_name(name):
+    base, e = os.path.splitext(name)
+    return base + ORIGINAL + e
+
+
 def group_key(name):
     """Base name shared by every file belonging to one shot.
 
-    IMG_1234.HEIC, IMG_1234.MOV (Live Photo), IMG_1234.AAE and IMG_1234.JPG.xmp
-    all map to 'img_1234'.
+    IMG_1234.HEIC, IMG_1234.MOV (Live Photo), IMG_1234.AAE, IMG_1234.JPG.xmp
+    and IMG_1234_original.MOV (kept when the video was rotated) all map to
+    'img_1234'.
     """
     base, e = os.path.splitext(name)
     if e.lower() in COMPANION and ext(base) in MEDIA:
         base = os.path.splitext(base)[0]
+    if is_original(name):
+        base = base[:-len(ORIGINAL)]
     return base.lower()
 
 
@@ -63,7 +81,9 @@ def natural_key(s):
 
 
 def pick_display(files):
-    """(file, render) used to show a group: render is native/heif/raw/video."""
+    """(file, render) used to show a group: render is native/heif/raw/video.
+    A rotated video is shown rather than its kept original."""
+    files = sorted(files, key=is_original)
     for kinds, render in ((NATIVE, "native"), (HEIF, "heif"), (RAW, "raw"), (VIDEO, "video")):
         for f in files:
             if ext(f) in kinds:
@@ -77,6 +97,15 @@ def _cache_path(kind, path, suffix=".jpg"):
     st = os.stat(path)
     key = hashlib.sha1(f"{os.path.abspath(path)}|{st.st_size}|{kind}".encode()).hexdigest()
     return os.path.join(CACHE_DIR, kind, key + suffix)
+
+
+def forget(path):
+    """Drop cached previews of path (it changed but may keep its size)."""
+    for kind in ("thumb", "preview"):
+        try:
+            os.remove(_cache_path(kind, path))
+        except OSError:
+            pass
 
 
 def _cached(kind, path, build):
@@ -176,11 +205,52 @@ def _video_frame(path):
     for seek in ("1", "0"):
         r = subprocess.run([FFMPEG, "-v", "error", "-ss", seek, "-i", path, "-frames:v", "1",
                             "-vf", f"scale={THUMB_PX * 2}:-2", "-f", "image2", "-c:v", "mjpeg", "-"],
-                           capture_output=True, timeout=30,
-                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                           capture_output=True, timeout=30, creationflags=_NO_WINDOW)
         if r.stdout:
             return r.stdout
     raise ValueError(f"no frame from {os.path.basename(path)}")
+
+
+# ---------------------------------------------------------------- video rotation
+# MP4/MOV store how a video should be turned for display in its header (the
+# display matrix). Changing only that is lossless and copies the streams
+# as they are; MKV/AVI/WebM have no such field.
+ROTATABLE = {".mp4", ".mov", ".m4v", ".3gp"}
+
+
+def video_info(path):
+    """{"rotation": counter-clockwise degrees, "duration": s, "streams": [types]}."""
+    r = subprocess.run([FFPROBE, "-v", "error", "-show_entries",
+                        "stream=codec_type:stream_side_data=rotation:format=duration", "-of", "json", path],
+                       capture_output=True, text=True, timeout=60, creationflags=_NO_WINDOW)
+    if r.returncode:
+        raise ValueError(r.stderr.strip() or "ffprobe failed")
+    j = json.loads(r.stdout)
+    streams = j.get("streams", [])
+    video = next((s for s in streams if s.get("codec_type") == "video"), {})
+    rotation = next((sd["rotation"] for sd in video.get("side_data_list", []) if "rotation" in sd), 0)
+    return {"rotation": round(float(rotation)), "duration": float(j.get("format", {}).get("duration") or 0),
+            "streams": [s.get("codec_type") for s in streams]}
+
+
+def write_rotated(src, dst, ccw):
+    """Copy video src to dst with its display rotation set to ccw degrees.
+    Everything is copied as is (streams, and metadata such as creation date
+    and location). Returns a note if some extra tracks had to be left out."""
+    def run(maps):
+        return subprocess.run([FFMPEG, "-v", "error", "-y", "-display_rotation:v:0", str(ccw), "-i", src,
+                               *maps, "-c", "copy", "-map_metadata", "0", "-movflags", "use_metadata_tags", dst],
+                              capture_output=True, text=True, timeout=1800, creationflags=_NO_WINDOW)
+    r = run(["-map", "0"])
+    if r.returncode == 0:
+        return ""
+    # Some phones add data tracks (e.g. iPhone timed metadata) that can't be
+    # copied into a new file; keep the video and sound.
+    r2 = run(["-map", "0:v", "-map", "0:a?"])
+    if r2.returncode:
+        err = (r2.stderr or r.stderr or "").strip().splitlines()
+        raise ValueError(err[-1] if err else "ffmpeg failed")
+    return "extra data tracks (e.g. phone metadata) couldn't be copied and were left out"
 
 
 # Decoding many full-size photos at once (grid scrolling) thrashes the disk and

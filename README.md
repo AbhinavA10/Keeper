@@ -26,7 +26,9 @@ picks are already there. NEF+JPG pairs are always treated as one photo.
 
 **🛡️ Your originals are never touched.** Keeper only *reads* your photos.
 Everything it records lives in sidecars or a small `.keeper.json`, and
-deleting is a deliberate, reviewed step that goes to the Recycle Bin.
+deleting is a deliberate, reviewed step that goes to the Recycle Bin. (The one
+exception is [rotating a video](#rotate-videos) when you ask it to, and even
+then the original is kept beside it, unchanged.)
 
 **📱 Not just Nikon.** Phone photos (including iPhone HEIC and Live Photos),
 other cameras' raw files and videos all work too.
@@ -72,7 +74,7 @@ instead and says so.
 
 Requirements on the machine: **Windows 10 or 11** and a modern browser
 (Chrome, Edge or Firefox). Optionally **[ffmpeg](https://ffmpeg.org/download.html)**
-on the `PATH` for video thumbnails; videos still play without it.
+on the `PATH` for video thumbnails and rotating videos; videos still play without it.
 
 To make one from the current code instead,
 [build it](#build-the-portable-exe) (a minute or so). The first launch takes a few seconds while Windows
@@ -226,6 +228,7 @@ view afterwards). Otherwise NX Studio can overwrite the new ratings from its cac
 | Space | Play / pause a video; zoom a photo to 100% and back (in compare: zoom all frames) |
 | Z or click | Zoom to 100% |
 | P | Play / pause video |
+| [ ] | Rotate the selected video left / right (see [Rotate videos](#rotate-videos)) |
 | Ctrl+Z | Undo |
 | Shift+F | Open / close the filter |
 | A | Toggle auto-advance to the next photo after rating or rejecting |
@@ -265,6 +268,29 @@ folders you've opened lately. The open folder's count updates as you work.
 The counts come from NX Studio sidecars and `.keeper.json` only, so even
 folders with thousands of photos are counted in a second or two. (Ratings set
 in the camera itself only show up once a folder is opened.)
+
+### Rotate videos
+
+When a camera or phone recorded a video sideways, select it and press **]**
+to turn it right or **[** to turn it left (or use **⟲ ⟳** in the header, which
+appear when a video is selected). **Ctrl+Z** turns it back.
+
+* **Lossless and quick:** only the rotation stored in the video's header
+  changes; the picture and sound are copied as they are, along with metadata
+  such as the recording date and location.
+* **Same dates:** videos have no EXIF, so they sort by the file's own dates.
+  The rotated video keeps the original's *Date created*, *Date modified* and
+  *Date accessed* exactly.
+* **Original kept:** the rotated copy is checked (rotation, length, streams)
+  before it takes the video's name, and the original is kept beside it,
+  unchanged, as `NAME_original.MP4` (or `.MOV`), so you can compare them.
+  Keeper shows the two as one video marked **⟳ ROTATED** (on thumbnails and in
+  the info card), and deleting it as a reject removes both.
+* **Turning again** always starts from the original, so nothing degrades.
+  Turning it back the way it was recorded (or Ctrl+Z) puts the original back
+  under its own name; the rotated copy goes to the Recycle Bin.
+* Works for **MP4 and MOV** (incl. M4V, 3GP), which have a rotation field;
+  needs **[ffmpeg](https://ffmpeg.org/download.html)** on the `PATH`.
 
 ### Fix dates
 

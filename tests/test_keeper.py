@@ -2,6 +2,7 @@
 import io
 import json
 import os
+import subprocess
 import tempfile
 import threading
 import time
@@ -177,6 +178,93 @@ class CaptureTimes(Folder):
         self.assertIsNone(times["clip"])       # videos aren't read
         self.assertIsNone(times["img_0003"])   # no Date Taken
         self.assertPhotosUntouched()
+
+
+@unittest.skipUnless(K.M.FFMPEG and K.M.FFPROBE, "needs ffmpeg")
+class RotateVideo(unittest.TestCase):
+    """Rotating rewrites the video's header only and keeps its dates."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dir = self._tmp.name
+        self.path = os.path.join(self.dir, "IMG_0100.MOV")
+        subprocess.run([K.M.FFMPEG, "-v", "error", "-f", "lavfi", "-i", "testsrc=duration=2:size=320x180:rate=15",
+                        "-f", "lavfi", "-i", "sine=duration=2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
+                        "-metadata", "creation_time=2026-07-01T09:30:00Z", self.path], check=True)
+        old = 1_600_000_000_000_000_000  # Sep 2020, in ns
+        K.set_file_times(self.path, old - 10**12, old + 10**9, old)
+        self.original = fingerprints(self.dir)["IMG_0100.MOV"]
+        K.set_file_times(self.path, old - 10**12, old + 10**9, old)  # again: reading it updated Accessed
+        self.st = os.stat(self.path)
+        self.orig_path = os.path.join(self.dir, "IMG_0100_original.MOV")
+        self.binned = []
+        def fake_recycle(paths):  # keep the real Recycle Bin out of tests
+            self.binned += [os.path.basename(p) for p in paths]
+            for p in paths:
+                os.remove(p)
+            return True
+        patch = mock.patch.object(K, "recycle", fake_recycle)
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.cat = K.Catalogue(self.dir)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_rotates_losslessly_and_keeps_every_date(self):
+        out = self.cat.rotate_video("img_0100", 90)
+        self.assertEqual(out["rotation"], -90)  # 90° clockwise = -90 counter-clockwise
+        st = os.stat(self.path)  # before anything reads the file (reading updates Accessed)
+        self.assertEqual((st.st_mtime_ns, st.st_atime_ns, st.st_ctime_ns),
+                         (self.st.st_mtime_ns, self.st.st_atime_ns, self.st.st_ctime_ns))
+        # The original is kept beside it, untouched (renamed, same contents and dates).
+        self.assertEqual(sorted(os.listdir(self.dir)), ["IMG_0100.MOV", "IMG_0100_original.MOV"])
+        self.assertEqual(fingerprints(self.dir)["IMG_0100_original.MOV"], self.original)
+        self.assertEqual(self.binned, [])
+        self.assertEqual((out["rotated"], out["files"]), (True, ["IMG_0100.MOV", "IMG_0100_original.MOV"]))
+        info = K.M.video_info(self.path)
+        self.assertEqual((info["rotation"], info["streams"]), (-90, ["video", "audio"]))
+        r = subprocess.run([K.M.FFPROBE, "-v", "error", "-show_entries", "format_tags=creation_time",
+                            "-of", "default=nw=1:nk=1", self.path], capture_output=True, text=True)
+        self.assertTrue(r.stdout.startswith("2026-07-01T09:30:00"))
+
+    def test_the_pair_is_one_item_after_a_rescan(self):
+        self.cat.rotate_video("img_0100", 90)
+        item = K.Catalogue(self.dir).items["img_0100"]
+        self.assertEqual((item["display"], item["files"], item["rotated"]),
+                         ("IMG_0100.MOV", ["IMG_0100.MOV", "IMG_0100_original.MOV"], True))
+        self.assertEqual(len(K.Catalogue(self.dir).items), 1)
+
+    def test_turns_add_up_and_turning_back_restores_the_original(self):
+        self.assertEqual(self.cat.rotate_video("img_0100", 90)["rotation"], -90)
+        self.assertEqual(self.cat.rotate_video("img_0100", 90)["rotation"], 180)
+        self.assertEqual(fingerprints(self.dir)["IMG_0100_original.MOV"], self.original)  # still the first one
+        self.assertEqual(self.cat.rotate_video("img_0100", -90)["rotation"], -90)
+        out = self.cat.rotate_video("img_0100", -90)
+        self.assertEqual((out["rotation"], out["ver"], out["rotated"]), (0, 4, False))
+        self.assertEqual(os.listdir(self.dir), ["IMG_0100.MOV"])
+        self.assertEqual(fingerprints(self.dir)["IMG_0100.MOV"], self.original)  # the original itself is back
+        self.assertEqual(self.binned, ["IMG_0100.MOV"])  # the rotated copy, to the Recycle Bin
+
+    def test_only_video_originals_are_grouped(self):
+        self.assertEqual(K.M.group_key("IMG_1_original.MP4"), "img_1")
+        self.assertEqual(K.M.group_key("IMG_1_original.JPG"), "img_1_original")  # a photo named that is its own item
+
+    def test_refuses_what_it_cannot_rotate(self):
+        make_jpeg(os.path.join(self.dir, "IMG_0101.JPG"))
+        touch(os.path.join(self.dir, "clip.mkv"))
+        cat = K.Catalogue(self.dir)
+        for key, deg in (("img_0101", 90), ("clip", 90), ("img_0100", 45)):
+            with self.subTest(key=key, deg=deg), self.assertRaises(ValueError):
+                cat.rotate_video(key, deg)
+        self.assertEqual(self.binned, [])
+
+    def test_a_failed_rewrite_leaves_the_original(self):
+        before = fingerprints(self.dir)
+        with mock.patch.object(K.M, "write_rotated", side_effect=ValueError("boom")), self.assertRaises(ValueError):
+            self.cat.rotate_video("img_0100", 90)
+        self.assertEqual(fingerprints(self.dir), before)
+        self.assertEqual(self.binned, [])
 
 
 class FolderMemory(unittest.TestCase):
