@@ -33,7 +33,7 @@ import xmp_rating as X
 # Bundled files (keeper.html) live in PyInstaller's unpack folder when
 # running as Keeper.exe, and next to this script otherwise.
 HERE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-VERSION = "1.3.0"  # release.py tags and publishes this
+VERSION = "1.3.1"  # release.py tags and publishes this
 STATE_FILE = ".keeper.json"
 LEGACY_STATE_FILE = ".photocull.json"  # written by the app before it was renamed
 # Remembers the last folder. Kept apart from the thumbnail cache in
@@ -260,6 +260,20 @@ class Catalogue:
             item["rotated"] = kept
             item["ver"] = item.get("ver", 0) + 1
         return {"rotation": ccw, "ver": item["ver"], "note": note, "rotated": kept, "files": item["files"]}
+
+    def keep_rotated(self, key):
+        """Happy with a rotated video: send its kept original to the Recycle Bin."""
+        item = self.items[key]
+        name = M.original_name(item["display"])
+        if not item.get("rotated"):
+            raise ValueError(f"{item['name']} isn't a rotated video")
+        with ROTATING:
+            path = os.path.join(self.folder, name)
+            if os.path.exists(path):
+                _when_free(lambda: recycle([path]), name)
+            item["files"] = [n for n in item["files"] if n != name]
+            item["rotated"] = False
+        return {"rotated": False, "files": item["files"], "binned": name}
 
     def fix_dates(self, apply=False):
         """Set each JPEG's Date Modified to its EXIF Date Taken.
@@ -603,6 +617,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"deleted": deleted, "failed": failed})
             if self.path == "/api/rotate":
                 return self._send(200, self.cat.rotate_video(data["key"], int(data["degrees"])))
+            if self.path == "/api/keep-rotated":
+                return self._send(200, self.cat.keep_rotated(data["key"]))
             if self.path == "/api/fix-dates":
                 return self._send(200, self.cat.fix_dates(apply=bool(data.get("apply"))))
             if self.path == "/api/open":  # a folder picked in the sidebar

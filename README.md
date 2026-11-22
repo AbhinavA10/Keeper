@@ -183,7 +183,7 @@ The page itself also accepts a starting state in its URL, handy for bookmarks:
 `?view=grid` or `?view=single`, `&strip=1` (show the filmstrip),
 `&item=DSC_1234` (open that photo), `&filter=r1,r2,keep` (filter options,
 comma-separated: `r0`–`r5` for unrated to 5★, `keep`, `rejected`, `red`, `blue`,
-`nolabel`, `photos`, `videos`; `unrated` means `r0,keep`) and `&help=1` (show the shortcuts).
+`nolabel`, `photos`, `videos`, `rotated`; `unrated` means `r0,keep`) and `&help=1` (show the shortcuts).
 
 ## Using it
 
@@ -201,7 +201,7 @@ To look at a rejected photo again, open it from the grid (or filter for
 **Filter** (the button in the header, or **Shift+F**) shows only what you
 tick. Options are grouped: *Stars* (Unrated, ★1–★5), *Status* (Not rejected,
 Rejected), *Label* (Social media, Flagged, No label) and *Type* (Photos,
-Videos). Ticks in the same group are alternatives, so ★1 + ★2 shows 1- and
+Videos, Rotated videos). Ticks in the same group are alternatives, so ★1 + ★2 shows 1- and
 2-star photos; ticks in different groups must all match, so adding *Not
 rejected* hides rejected ones among them. Each option shows how many photos it
 matches; *Show all* clears the filter.
@@ -289,6 +289,10 @@ appear when a video is selected). **Ctrl+Z** turns it back.
 * **Turning again** always starts from the original, so nothing degrades.
   Turning it back the way it was recorded (or Ctrl+Z) puts the original back
   under its own name; the rotated copy goes to the Recycle Bin.
+* **Done checking?** Select the video and click **✓ Keep rotated** (it
+  appears in the header for rotated videos). The kept original goes to the
+  Recycle Bin and the video is no longer marked rotated. To find every
+  rotated video in a folder, tick **Rotated videos** in the filter.
 * Works for **MP4 and MOV** (incl. M4V, 3GP), which have a rotation field;
   needs **[ffmpeg](https://ffmpeg.org/download.html)** on the `PATH`.
 

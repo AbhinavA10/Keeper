@@ -21,7 +21,7 @@
   #app.nostrip { grid-template-rows: 44px 1fr; }
   #app.nostrip #strip { display: none; }
 
-  #app:not(.curvideo) .vidonly { display: none; }
+  #app:not(.curvideo) .vidonly, #app:not(.currotated) .rotonly { display: none; }
 
   /* Filter: a button opening checkbox groups. */
   .fwrap { position: relative; }
@@ -212,6 +212,7 @@
     <button id="viewBtn" title="Switch between grid and single-photo view (G)">▦ Grid</button>
     <button id="rotL" class="vidonly" title="Rotate video left ([)">⟲</button>
     <button id="rotR" class="vidonly" title="Rotate video right (])">⟳</button>
+    <button id="keepRot" class="rotonly" title="Happy with the rotation: send the kept original to the Recycle Bin">✓ Keep rotated</button>
     <button id="cmpBtn" class="toggle" title="Compare this burst side by side (C)">⧉ Compare</button>
     <button id="stripBtn" class="toggle singleonly" title="Show thumbnails under the photo (T)">Filmstrip</button>
     <button id="auto" class="toggle on" title="Advance to next item after rating/rejecting (A)">Auto-advance</button>
@@ -266,7 +267,7 @@
       <kbd>0</kbd><span>Clear rating</span>
       <kbd>S</kbd><span>Toggle social media — shareable, no people (red label in NX Studio; <kbd>R</kbd> also works)</span>
       <kbd>F</kbd><span>Toggle flagged — needs more correction in NX Studio (blue label). A photo has one label, so this replaces social media.</span>
-      <kbd>[ ]</kbd><span>Rotate a video left / right (or ⟲ ⟳ in the header). Lossless; keeps the file's dates; the original is kept as NAME_original and the video is marked ROTATED</span>
+      <kbd>[ ]</kbd><span>Rotate a video left / right (or ⟲ ⟳ in the header). Lossless; keeps the file's dates; the original is kept as NAME_original and the video is marked ROTATED; <b>✓ Keep rotated</b> sends the original to the Recycle Bin, and the filter's <i>Rotated videos</i> lists them all</span>
       <kbd>Space</kbd><span>Play / pause a video; zoom a photo to 100% and back (also <kbd>Z</kbd>, <kbd>P</kbd>, or click the photo)</span>
       <kbd>Ctrl Z</kbd><span>Undo last change</span>
       <kbd>Shift F</kbd><span>Open / close the filter. Tick several options in a group to see any of them (e.g. ★1 and ★2); ticks in different groups must all match</span>
@@ -362,7 +363,7 @@ const FILTER_GROUPS = [
   ['Stars', [['r0', 'Unrated'], ['r1', '★1'], ['r2', '★2'], ['r3', '★3'], ['r4', '★4'], ['r5', '★5']]],
   ['Status', [['keep', 'Not rejected'], ['rejected', 'Rejected']]],
   ['Label', [['red', 'Social media'], ['blue', 'Flagged'], ['nolabel', 'No label']]],
-  ['Type', [['photos', 'Photos'], ['videos', 'Videos']]],
+  ['Type', [['photos', 'Photos'], ['videos', 'Videos'], ['rotated', 'Rotated videos']]],
 ];
 const filt = new Set();  // ticked option ids
 
@@ -375,6 +376,7 @@ function hasToken(it, t) {
     case 'nolabel': return !it.label;
     case 'photos': return !isVideo(it);
     case 'videos': return isVideo(it);
+    case 'rotated': return !!it.rotated;
     default: return (it.rating || 0) === +t.slice(1);  // r0..r5
   }
 }
@@ -591,13 +593,14 @@ const infoCache = new Map();
 async function show() {
   if (!view.length) {
     stage.className = ''; zoomed = false;
-    $('#app').classList.remove('curvideo');
+    $('#app').classList.remove('curvideo', 'currotated');
     stage.innerHTML = `<div class="empty">${emptyText()}</div>`;
     return;
   }
   cur = Math.min(Math.max(cur, 0), view.length - 1);
   markCurrent();
   $('#app').classList.toggle('curvideo', isVideo(view[cur]));
+  $('#app').classList.toggle('currotated', !!view[cur].rotated);
   if (mode === 'grid') return;  // the big photo only loads in single view
   const it = view[cur];
   skeleton();
@@ -892,6 +895,22 @@ async function rotateVideo(degrees, it = view[cur], record = true) {
   if (view[cur] === it) show();
 }
 
+// Keep rotated: the rotation is right, so the kept original can go (to the
+// Recycle Bin). After this, Ctrl+Z can no longer restore it.
+async function keepRotated(it = view[cur]) {
+  if (!it?.rotated) return;
+  if (rotating) return toast('Still rotating the last video…');
+  try {
+    const j = await api('/api/keep-rotated', { key: it.key }, { tries: 1, timeout: 0 });
+    Object.assign(it, { rotated: j.rotated, files: j.files });
+    for (let i = undo.length - 1; i >= 0; i--) if (undo[i].rotate === it) undo.splice(i, 1);  // nothing to restore now
+    toast(`Kept the rotated ${it.name}; ${j.binned} is in the Recycle Bin`, false, 4000);
+  } catch (e) { toast(`Couldn't remove the original: ${e.message}`, true, 8000); }
+  const i = view.indexOf(it);
+  if (i >= 0) paintThumb(i);
+  if (!matches(it)) refilter(); else if (view[cur] === it) show();
+}
+
 // Space (and P): play / pause a video, zoom a photo to 100% and back.
 function playOrZoom() {
   const v = stage.querySelector('#vid');
@@ -1143,6 +1162,7 @@ $('#upBtn').addEventListener('click', e => { e.target.blur(); if (treeParent) lo
 $('#sideBtn').addEventListener('click', e => { e.target.blur(); setSide(!sideOpen); });
 $('#rotL').addEventListener('click', e => { e.target.blur(); rotateVideo(-90); });
 $('#rotR').addEventListener('click', e => { e.target.blur(); rotateVideo(90); });
+$('#keepRot').addEventListener('click', e => { e.target.blur(); keepRotated(); });
 $('#cmpBtn').addEventListener('click', e => { e.target.blur(); cmp ? closeCompare() : openCompare(); });
 
 function setAuto(v) {

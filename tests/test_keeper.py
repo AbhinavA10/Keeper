@@ -246,6 +246,17 @@ class RotateVideo(unittest.TestCase):
         self.assertEqual(fingerprints(self.dir)["IMG_0100.MOV"], self.original)  # the original itself is back
         self.assertEqual(self.binned, ["IMG_0100.MOV"])  # the rotated copy, to the Recycle Bin
 
+    def test_keep_rotated_bins_only_the_original(self):
+        self.cat.rotate_video("img_0100", 90)
+        rotated = fingerprints(self.dir)["IMG_0100.MOV"]
+        out = self.cat.keep_rotated("img_0100")
+        self.assertEqual((out["rotated"], out["files"]), (False, ["IMG_0100.MOV"]))
+        self.assertEqual(self.binned, ["IMG_0100_original.MOV"])
+        self.assertEqual(fingerprints(self.dir), {"IMG_0100.MOV": rotated})  # the rotated video is untouched
+        self.assertFalse(K.Catalogue(self.dir).items["img_0100"]["rotated"])
+        with self.assertRaises(ValueError):  # nothing left to keep
+            self.cat.keep_rotated("img_0100")
+
     def test_only_video_originals_are_grouped(self):
         self.assertEqual(K.M.group_key("IMG_1_original.MP4"), "img_1")
         self.assertEqual(K.M.group_key("IMG_1_original.JPG"), "img_1_original")  # a photo named that is its own item
